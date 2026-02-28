@@ -139,6 +139,15 @@ async function generateTestCases(prompt, options = {}) {
 
       // Rate limit handling
       if (err.status === 429 || (err.message && err.message.includes('rate_limit'))) {
+        const errText = [err.message, err.error?.message, JSON.stringify(err)].filter(Boolean).join(' ');
+        const isDailyLimit = /tokens per day|\btpd\b/i.test(errText);
+        if (isDailyLimit) {
+          const e = new Error(
+            'Groq daily token limit reached. Use --filter-paths or --filter-tags to generate for fewer endpoints, or try again after the limit resets.'
+          );
+          e.code = 'GROQ_DAILY_LIMIT';
+          throw e;
+        }
         const delay = Math.pow(2, attempt) * 1000; // Exponential backoff
         logger.warn(`Rate limited. Retrying in ${delay / 1000}s (attempt ${attempt}/${maxRetries})`);
         await sleep(delay);

@@ -664,6 +664,21 @@
           placeholder="e.g., Users must verify email before purchasing. Premium users get higher rate limits. Admin can ban users..."></textarea>
       </div>
 
+      <!-- Routes directory (optional: use with or without Swagger) -->
+      <div class="form-group" style="margin-top: 16px;">
+        <label for="routesPath">Routes directory path (optional)</label>
+        <input type="text" id="routesPath" placeholder="e.g. /Users/you/projects/QLS-Backend/src/routes"
+          style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font-size: 13px;">
+        <div class="hint" style="margin-top: 4px; font-size: 12px; color: var(--text-dim);">
+          Absolute path to your backend's route folder. Use with Swagger or alone. Server runs on your machine so local paths work.
+        </div>
+      </div>
+      <div class="form-group" style="margin-top: 8px;">
+        <label for="controllersPath">Controllers directory path (optional)</label>
+        <input type="text" id="controllersPath" placeholder="e.g. /Users/you/projects/QLS-Backend/src/controllers"
+          style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font-size: 13px;">
+      </div>
+
       <!-- Advanced Options -->
       <div class="accordion" id="advancedAccordion">
         <div class="accordion-header" onclick="toggleAccordion()">
@@ -716,15 +731,15 @@
       <div class="placeholder" id="placeholderView">
         <div class="icon">🧪</div>
         <h3>Ready to Generate</h3>
-        <p>Upload a Swagger/OpenAPI file or paste your API spec, then click Generate.</p>
+        <p>Upload a Swagger/OpenAPI file, paste your API spec, or pass a Routes directory path — then click Generate.</p>
         <div class="steps">
           <div class="step">
             <span class="step-num">1</span>
-            <span class="step-text">Upload or paste your Swagger/OpenAPI specification</span>
+            <span class="step-text">Upload or paste Swagger/OpenAPI, or enter your backend Routes directory path</span>
           </div>
           <div class="step">
             <span class="step-num">2</span>
-            <span class="step-text">Optionally add business rules and filter options</span>
+            <span class="step-text">Optionally add business rules, routes path, and filter options</span>
           </div>
           <div class="step">
             <span class="step-num">3</span>
@@ -860,8 +875,11 @@
     // ── Generate ──
     async function generate() {
       const content = swaggerContent || document.getElementById('pasteInput').value.trim();
-      if (!content) {
-        showError('Please upload a file or paste Swagger content first.');
+      const routesPath = document.getElementById('routesPath').value.trim();
+      const controllersPath = document.getElementById('controllersPath').value.trim();
+
+      if (!content && !routesPath) {
+        showError('Please upload/paste Swagger content or enter a Routes directory path.');
         return;
       }
 
@@ -895,8 +913,10 @@
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            type: 'swagger',
-            swaggerContent: content,
+            type: content ? 'swagger' : 'routes',
+            swaggerContent: content || undefined,
+            routesPath: routesPath || undefined,
+            controllersPath: controllersPath || undefined,
             businessContext: bizCtx,
             format,
             filterTags: filterTags ? filterTags.split(',').map(t => t.trim()) : [],

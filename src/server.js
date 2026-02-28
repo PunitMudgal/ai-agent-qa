@@ -10,7 +10,8 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs-extra');
 const logger = require('./utils/logger');
-const { generateFromSwaggerString, generateFromSwagger, generateFromMixed } = require('./generators/testCaseGenerator');
+const os = require('os');
+const { generateFromSwaggerString, generateFromRoutes, generateFromMixed } = require('./generators/testCaseGenerator');
 const { parseSwaggerFile, parseSwaggerString } = require('./parsers/swaggerParser');
 const { listFiles } = require('./utils/fileUtils');
 const { formatTestCases: formatJson } = require('./formatters/jsonFormatter');
@@ -103,12 +104,14 @@ app.post('/upload', upload.single('file'), async (req, res) => {
   }
 });
 
-// Main generation endpoint
+// Main generation endpoint (supports Swagger and/or Routes directory)
 app.post('/generate', async (req, res) => {
   try {
     const {
       type = 'swagger',
       swaggerContent,
+      routesPath,
+      controllersPath,
       businessContext = '',
       format = 'json',
       filterTags = [],
@@ -116,8 +119,10 @@ app.post('/generate', async (req, res) => {
       minTests = 10,
     } = req.body;
 
-    if (!swaggerContent) {
-      return res.status(400).json({ error: 'Swagger content is required' });
+    if (!swaggerContent && !routesPath) {
+      return res.status(400).json({
+        error: 'Provide either Swagger (upload/paste) or a Routes directory path (or both).',
+      });
     }
 
     // Check API key
@@ -131,16 +136,52 @@ app.post('/generate', async (req, res) => {
       format,
       outputDir,
       businessContext,
-      filterTags: Array.isArray(filterTags) ? filterTags : filterTags.split(',').filter(Boolean),
-      filterPaths: Array.isArray(filterPaths) ? filterPaths : filterPaths.split(',').filter(Boolean),
+      filterTags: Array.isArray(filterTags) ? filterTags : (filterTags || '').split(',').filter(Boolean),
+      filterPaths: Array.isArray(filterPaths) ? filterPaths : (filterPaths || '').split(',').filter(Boolean),
       minTestsPerEndpoint: parseInt(minTests) || 10,
     };
 
-    logger.info(`Web UI: Generating test cases (format: ${format})`);
+    let testCases;
+    let savedFiles = [];
+    const resolvedRoutesPath = routesPath ? path.resolve(routesPath.trim()) : null;
+    const resolvedControllersPath = controllersPath ? path.resolve(controllersPath.trim()) : null;
 
-    const { testCases, savedFiles } = await generateFromSwaggerString(swaggerContent, options);
+    if (swaggerContent && resolvedRoutesPath) {
+      // Mixed: Swagger + Routes — write swagger to temp file and use generateFromMixed
+      const tempDir = os.tmpdir();
+      const tempPath = path.join(tempDir, `swagger-${Date.now()}.json`);
+      await fs.writeFile(tempPath, swaggerContent, 'utf-8');
+      try {
+        logger.info(`Web UI: Generating from Swagger + Routes (format: ${format})`);
+        const result = await generateFromMixed({
+          ...options,
+          swagger: tempPath,
+          routes: resolvedRoutesPath,
+          controllers: resolvedControllersPath || undefined,
+        });
+        testCases = result.testCases;
+        savedFiles = result.savedFiles;
+      } finally {
+        await fs.remove(tempPath).catch(() => {});
+      }
+    } else if (resolvedRoutesPath && !swaggerContent) {
+      // Routes only
+      logger.info(`Web UI: Generating from Routes only (format: ${format})`);
+      const result = await generateFromRoutes(
+        resolvedRoutesPath,
+        resolvedControllersPath || null,
+        options
+      );
+      testCases = result.testCases;
+      savedFiles = result.savedFiles;
+    } else {
+      // Swagger only (upload or paste)
+      logger.info(`Web UI: Generating from Swagger (format: ${format})`);
+      const result = await generateFromSwaggerString(swaggerContent, options);
+      testCases = result.testCases;
+      savedFiles = result.savedFiles;
+    }
 
-    // Format output for response
     const jsonOutput = formatJson(testCases);
     const mdOutput = formatMd(testCases);
 

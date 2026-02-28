@@ -14,6 +14,19 @@ const { ensureOutputDir, generateBatchFilename } = require('../utils/fileUtils')
 const logger = require('../utils/logger');
 const path = require('path');
 
+const GROQ_DAILY_LIMIT_MSG =
+  'Daily token limit reached for Groq. Retrying will not help until the limit resets (usually next day).\n' +
+  '  Options: 1) Wait and run again later  2) Use --filter-paths or --filter-tags to generate for fewer endpoints  3) Reduce --min-tests  4) Upgrade at https://console.groq.com/settings/billing';
+
+/** If err is Groq daily limit, log once and rethrow so the run aborts without spamming. */
+function handleGenerationError(err, label) {
+  if (err.code === 'GROQ_DAILY_LIMIT') {
+    logger.warn(GROQ_DAILY_LIMIT_MSG);
+    throw err;
+  }
+  logger.warn(`Failed to generate for ${label}: ${err.message}`);
+}
+
 /**
  * Default options for generation.
  */
@@ -145,7 +158,7 @@ async function generateFromSwagger(swaggerPath, options = {}) {
       allTestCases.push(...withIds);
       logger.debug(`Generated ${withIds.length} test cases for ${label}`);
     } catch (err) {
-      logger.warn(`Failed to generate for ${label}: ${err.message}`);
+      handleGenerationError(err, label);
     }
   }
 
@@ -190,7 +203,7 @@ async function generateFromSwaggerString(swaggerContent, options = {}) {
       idCounter += withIds.length;
       allTestCases.push(...withIds);
     } catch (err) {
-      logger.warn(`Failed to generate for ${label}: ${err.message}`);
+      handleGenerationError(err, label);
     }
   }
 
@@ -256,7 +269,7 @@ async function generateFromRoutes(routesDir, controllersDir, options = {}) {
       idCounter += withIds.length;
       allTestCases.push(...withIds);
     } catch (err) {
-      logger.warn(`Failed to generate for ${label}: ${err.message}`);
+      handleGenerationError(err, label);
     }
   }
 
@@ -354,7 +367,7 @@ async function generateFromMixed(options = {}) {
       idCounter += withIds.length;
       allTestCases.push(...withIds);
     } catch (err) {
-      logger.warn(`Failed to generate for ${label}: ${err.message}`);
+      handleGenerationError(err, label);
     }
   }
 
