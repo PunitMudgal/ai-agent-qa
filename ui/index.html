@@ -1,0 +1,1125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QA Test Generator — AI-Powered Test Case Generation</title>
+  <meta name="description" content="Generate comprehensive QA test cases from Swagger/OpenAPI specs using Groq AI and Llama 3.3">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --bg: #0a0a0b;
+      --surface: #131316;
+      --surface-2: #1a1a1f;
+      --surface-3: #222228;
+      --border: #2a2a32;
+      --border-hover: #3a3a45;
+      --text: #e4e4e7;
+      --text-muted: #8b8b97;
+      --text-dim: #5a5a66;
+      --accent: #7c3aed;
+      --accent-light: #8b5cf6;
+      --accent-glow: rgba(124, 58, 237, 0.15);
+      --green: #22c55e;
+      --green-bg: rgba(34, 197, 94, 0.1);
+      --red: #ef4444;
+      --red-bg: rgba(239, 68, 68, 0.1);
+      --orange: #f59e0b;
+      --orange-bg: rgba(245, 158, 11, 0.1);
+      --blue: #3b82f6;
+      --blue-bg: rgba(59, 130, 246, 0.1);
+      --purple: #a855f7;
+      --purple-bg: rgba(168, 85, 247, 0.1);
+      --yellow: #eab308;
+      --gray: #6b7280;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      line-height: 1.6;
+    }
+
+    /* ── Navbar ── */
+    .navbar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 100;
+      background: rgba(10, 10, 11, 0.85);
+      backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .navbar-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+    }
+    .navbar-brand .icon { font-size: 24px; }
+    .navbar-badge {
+      background: var(--accent-glow);
+      color: var(--accent-light);
+      padding: 3px 10px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 500;
+      border: 1px solid rgba(124, 58, 237, 0.2);
+    }
+    .navbar-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    /* ── Layout ── */
+    .app {
+      display: grid;
+      grid-template-columns: minmax(340px, 1fr) minmax(400px, 1.5fr);
+      gap: 0;
+      margin-top: 56px;
+      min-height: calc(100vh - 56px);
+    }
+    @media (max-width: 900px) {
+      .app { grid-template-columns: 1fr; }
+    }
+
+    /* ── Panels ── */
+    .panel {
+      padding: 24px;
+      overflow-y: auto;
+      max-height: calc(100vh - 56px);
+    }
+    .panel-left {
+      border-right: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    .section-title {
+      font-size: 14px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--text-muted);
+      margin-bottom: 16px;
+    }
+
+    /* ── Tabs ── */
+    .tabs {
+      display: flex;
+      gap: 0;
+      background: var(--surface-2);
+      border-radius: 10px;
+      padding: 3px;
+      margin-bottom: 20px;
+    }
+    .tab-btn {
+      flex: 1;
+      padding: 8px 12px;
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      border-radius: 8px;
+      transition: all 0.2s;
+    }
+    .tab-btn:hover { color: var(--text); }
+    .tab-btn.active {
+      background: var(--accent);
+      color: white;
+      box-shadow: 0 2px 8px rgba(124, 58, 237, 0.3);
+    }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    /* ── Upload Zone ── */
+    .upload-zone {
+      border: 2px dashed var(--border);
+      border-radius: 12px;
+      padding: 40px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.3s;
+      background: var(--surface-2);
+      position: relative;
+    }
+    .upload-zone:hover, .upload-zone.dragover {
+      border-color: var(--accent);
+      background: var(--accent-glow);
+    }
+    .upload-zone .icon { font-size: 36px; margin-bottom: 8px; }
+    .upload-zone .label { color: var(--text-muted); font-size: 14px; }
+    .upload-zone .hint { color: var(--text-dim); font-size: 12px; margin-top: 4px; }
+    .upload-zone input[type="file"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+    }
+    .upload-success {
+      margin-top: 12px;
+      padding: 10px;
+      background: var(--green-bg);
+      border: 1px solid rgba(34, 197, 94, 0.2);
+      border-radius: 8px;
+      font-size: 13px;
+      color: var(--green);
+      display: none;
+    }
+
+    /* ── Textarea ── */
+    .textarea-wrap { margin-bottom: 20px; }
+    .textarea-wrap label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      margin-bottom: 6px;
+      color: var(--text-muted);
+    }
+    textarea {
+      width: 100%;
+      min-height: 150px;
+      padding: 12px;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text);
+      font-family: 'Cascadia Code', 'Fira Code', monospace;
+      font-size: 13px;
+      resize: vertical;
+      transition: border-color 0.2s;
+    }
+    textarea:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+    textarea::placeholder { color: var(--text-dim); }
+
+    /* ── Accordion ── */
+    .accordion {
+      margin-bottom: 20px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    .accordion-header {
+      padding: 12px 16px;
+      background: var(--surface-2);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 14px;
+      font-weight: 500;
+      transition: background 0.2s;
+      user-select: none;
+    }
+    .accordion-header:hover { background: var(--surface-3); }
+    .accordion-arrow { transition: transform 0.3s; font-size: 12px; }
+    .accordion.open .accordion-arrow { transform: rotate(180deg); }
+    .accordion-body {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.3s ease;
+      background: var(--surface);
+    }
+    .accordion.open .accordion-body { max-height: 600px; }
+    .accordion-body-inner { padding: 16px; }
+
+    /* ── Form Controls ── */
+    .form-group {
+      margin-bottom: 14px;
+    }
+    .form-group label {
+      display: block;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+    }
+    .radio-group {
+      display: flex;
+      gap: 12px;
+    }
+    .radio-group label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      color: var(--text);
+    }
+    input[type="number"], input[type="text"] {
+      width: 100%;
+      padding: 8px 12px;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 13px;
+    }
+    input[type="number"]:focus, input[type="text"]:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+
+    /* ── Generate Button ── */
+    .btn-generate {
+      width: 100%;
+      padding: 14px 24px;
+      border: none;
+      border-radius: 12px;
+      background: linear-gradient(135deg, var(--accent), #6d28d9);
+      color: white;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      position: relative;
+      overflow: hidden;
+    }
+    .btn-generate:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 8px 25px rgba(124, 58, 237, 0.35);
+    }
+    .btn-generate:active { transform: translateY(0); }
+    .btn-generate:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+    .btn-generate .shimmer {
+      position: absolute;
+      top: 0; left: -100%;
+      width: 100%; height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+      animation: shimmer 2s infinite;
+    }
+    @keyframes shimmer {
+      100% { left: 100%; }
+    }
+
+    /* ── Output Panel ── */
+    .placeholder {
+      text-align: center;
+      padding: 60px 20px;
+    }
+    .placeholder .icon { font-size: 48px; margin-bottom: 16px; }
+    .placeholder h3 { font-size: 18px; margin-bottom: 8px; color: var(--text); }
+    .placeholder p { color: var(--text-muted); font-size: 14px; max-width: 400px; margin: 0 auto; }
+    .steps {
+      margin-top: 32px;
+      text-align: left;
+      max-width: 360px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    .step {
+      display: flex;
+      gap: 12px;
+      padding: 12px 0;
+    }
+    .step-num {
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      background: var(--accent-glow);
+      color: var(--accent-light);
+      font-size: 13px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .step-text { font-size: 14px; color: var(--text-muted); padding-top: 3px; }
+
+    /* ── Loading State ── */
+    .loading-state { text-align: center; padding: 60px 20px; display: none; }
+    .spinner {
+      width: 48px;
+      height: 48px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 20px;
+    }
+    @keyframes spin { 100% { transform: rotate(360deg); } }
+    .loading-msg {
+      font-size: 15px;
+      color: var(--text-muted);
+      animation: fadeInOut 2s infinite;
+    }
+    @keyframes fadeInOut { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
+
+    /* ── Stats Bar ── */
+    .stats-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 20px;
+      display: none;
+    }
+    .stat-badge {
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .stat-badge.total { background: var(--accent-glow); color: var(--accent-light); border: 1px solid rgba(124,58,237,0.2); }
+    .stat-badge.positive { background: var(--green-bg); color: var(--green); border: 1px solid rgba(34,197,94,0.2); }
+    .stat-badge.negative { background: var(--red-bg); color: var(--red); border: 1px solid rgba(239,68,68,0.2); }
+    .stat-badge.edge { background: var(--orange-bg); color: var(--orange); border: 1px solid rgba(245,158,11,0.2); }
+    .stat-badge.validation { background: var(--blue-bg); color: var(--blue); border: 1px solid rgba(59,130,246,0.2); }
+    .stat-badge.boundary { background: var(--purple-bg); color: var(--purple); border: 1px solid rgba(168,85,247,0.2); }
+
+    /* ── Results ── */
+    .results { display: none; }
+    .result-tabs {
+      display: flex;
+      gap: 0;
+      background: var(--surface-2);
+      border-radius: 10px;
+      padding: 3px;
+      margin-bottom: 16px;
+    }
+    .result-tab-btn {
+      flex: 1;
+      padding: 8px;
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      border-radius: 8px;
+      transition: all 0.2s;
+    }
+    .result-tab-btn:hover { color: var(--text); }
+    .result-tab-btn.active { background: var(--surface-3); color: var(--text); }
+    .result-content { display: none; }
+    .result-content.active { display: block; }
+
+    /* ── Preview Table ── */
+    .preview-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    .preview-table th {
+      text-align: left;
+      padding: 10px 12px;
+      background: var(--surface-2);
+      color: var(--text-muted);
+      font-weight: 500;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+    }
+    .preview-table td {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    .preview-table tr:hover td { background: var(--surface-2); }
+    .cat-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .cat-positive { background: var(--green-bg); color: var(--green); }
+    .cat-negative { background: var(--red-bg); color: var(--red); }
+    .cat-edge { background: var(--orange-bg); color: var(--orange); }
+    .cat-validation { background: var(--blue-bg); color: var(--blue); }
+    .cat-boundary { background: var(--purple-bg); color: var(--purple); }
+    .pri-high { color: var(--red); }
+    .pri-medium { color: var(--yellow); }
+    .pri-low { color: var(--gray); }
+
+    /* ── Code Block ── */
+    .code-block {
+      position: relative;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    .code-block pre {
+      padding: 16px;
+      overflow-x: auto;
+      font-family: 'Cascadia Code', 'Fira Code', monospace;
+      font-size: 12px;
+      line-height: 1.6;
+      max-height: 500px;
+      overflow-y: auto;
+    }
+    .copy-btn {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      padding: 6px 12px;
+      background: var(--surface-3);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text-muted);
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .copy-btn:hover { background: var(--accent); color: white; border-color: var(--accent); }
+
+    /* ── Download Buttons ── */
+    .download-bar {
+      display: flex;
+      gap: 10px;
+      margin-top: 16px;
+    }
+    .btn-download {
+      flex: 1;
+      padding: 10px 16px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface-2);
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      text-align: center;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: all 0.2s;
+    }
+    .btn-download:hover {
+      background: var(--accent);
+      color: white;
+      border-color: var(--accent);
+    }
+
+    /* ── History ── */
+    .history {
+      margin-top: 28px;
+      border-top: 1px solid var(--border);
+      padding-top: 20px;
+    }
+    .history-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-bottom: 8px;
+      transition: background 0.2s;
+    }
+    .history-item:hover { background: var(--surface-2); }
+    .history-name { font-size: 13px; font-weight: 500; }
+    .history-meta { font-size: 11px; color: var(--text-dim); }
+    .history-dl {
+      padding: 4px 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 12px;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.2s;
+    }
+    .history-dl:hover { background: var(--accent); color: white; border-color: var(--accent); }
+
+    /* ── Markdown Render ── */
+    .md-render {
+      padding: 20px;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      max-height: 500px;
+      overflow-y: auto;
+      font-size: 14px;
+      line-height: 1.7;
+    }
+    .md-render h1 { font-size: 20px; margin-bottom: 8px; }
+    .md-render h2 { font-size: 17px; margin: 16px 0 8px; color: var(--accent-light); }
+    .md-render h3 { font-size: 15px; margin: 12px 0 6px; }
+    .md-render h4 { font-size: 14px; margin: 10px 0 4px; }
+    .md-render table { width: 100%; border-collapse: collapse; margin: 8px 0; }
+    .md-render th, .md-render td { padding: 6px 10px; border: 1px solid var(--border); font-size: 13px; }
+    .md-render th { background: var(--surface-3); }
+    .md-render code { background: var(--surface-3); padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+    .md-render pre code { background: transparent; padding: 0; }
+    .md-render pre { background: var(--surface-3); padding: 12px; border-radius: 8px; overflow-x: auto; }
+    .md-render hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
+
+    /* ── Error ── */
+    .error-box {
+      display: none;
+      padding: 16px;
+      background: var(--red-bg);
+      border: 1px solid rgba(239, 68, 68, 0.2);
+      border-radius: 10px;
+      color: var(--red);
+      font-size: 14px;
+      margin-bottom: 16px;
+    }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--border-hover); }
+  </style>
+</head>
+<body>
+
+  <!-- Navbar -->
+  <nav class="navbar">
+    <div class="navbar-brand">
+      <span class="icon">🤖</span>
+      <span>QA Test Generator</span>
+      <span class="navbar-badge">Powered by Groq + Llama 3.3</span>
+    </div>
+    <div class="navbar-status" id="apiStatus">
+      <span class="status-dot"></span>
+      <span>Checking API...</span>
+    </div>
+  </nav>
+
+  <!-- Main App -->
+  <div class="app">
+
+    <!-- ── Left Panel: Inputs ── -->
+    <div class="panel panel-left">
+      <div class="section-title">Input Source</div>
+
+      <!-- Tabs -->
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="tab-upload">📄 Swagger File</button>
+        <button class="tab-btn" data-tab="tab-paste">📋 Paste Content</button>
+      </div>
+
+      <!-- Upload Tab -->
+      <div class="tab-content active" id="tab-upload">
+        <div class="upload-zone" id="uploadZone">
+          <input type="file" id="fileInput" accept=".json,.yaml,.yml">
+          <div class="icon">📁</div>
+          <div class="label">Drop your Swagger / OpenAPI file here</div>
+          <div class="hint">Supports .json, .yaml, .yml</div>
+        </div>
+        <div class="upload-success" id="uploadSuccess">
+          <span id="uploadFileName"></span> — <span id="uploadEndpoints"></span> endpoints detected
+        </div>
+      </div>
+
+      <!-- Paste Tab -->
+      <div class="tab-content" id="tab-paste">
+        <div class="textarea-wrap">
+          <label for="pasteInput">Paste your Swagger JSON or YAML</label>
+          <textarea id="pasteInput" placeholder='{"openapi":"3.0.0","info":{"title":"My API",...}}'></textarea>
+        </div>
+      </div>
+
+      <!-- Business Context (always visible) -->
+      <div class="textarea-wrap" style="margin-top: 16px;">
+        <label for="businessContext">Business Requirements (optional)</label>
+        <textarea id="businessContext" style="min-height: 80px;"
+          placeholder="e.g., Users must verify email before purchasing. Premium users get higher rate limits. Admin can ban users..."></textarea>
+      </div>
+
+      <!-- Advanced Options -->
+      <div class="accordion" id="advancedAccordion">
+        <div class="accordion-header" onclick="toggleAccordion()">
+          <span>⚙️ Advanced Options</span>
+          <span class="accordion-arrow">▼</span>
+        </div>
+        <div class="accordion-body">
+          <div class="accordion-body-inner">
+            <div class="form-group">
+              <label>Output Format</label>
+              <div class="radio-group">
+                <label><input type="radio" name="format" value="json"> JSON</label>
+                <label><input type="radio" name="format" value="markdown"> Markdown</label>
+                <label><input type="radio" name="format" value="both" checked> Both</label>
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="minTests">Min Tests per Endpoint</label>
+              <input type="number" id="minTests" value="10" min="1" max="50">
+            </div>
+            <div class="form-group">
+              <label for="filterTags">Filter by Tags (comma-separated)</label>
+              <input type="text" id="filterTags" placeholder="e.g., users, products">
+            </div>
+            <div class="form-group">
+              <label for="filterPaths">Filter by Paths (comma-separated)</label>
+              <input type="text" id="filterPaths" placeholder="e.g., /users, /auth">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Generate Button -->
+      <button class="btn-generate" id="generateBtn" onclick="generate()">
+        <span class="shimmer"></span>
+        ⚡ Generate Test Cases
+      </button>
+      <div style="text-align: center; margin-top: 8px; font-size: 11px; color: var(--text-dim);">
+        Ctrl + Enter to generate
+      </div>
+    </div>
+
+    <!-- ── Right Panel: Output ── -->
+    <div class="panel panel-right">
+
+      <!-- Error Box -->
+      <div class="error-box" id="errorBox"></div>
+
+      <!-- Placeholder -->
+      <div class="placeholder" id="placeholderView">
+        <div class="icon">🧪</div>
+        <h3>Ready to Generate</h3>
+        <p>Upload a Swagger/OpenAPI file or paste your API spec, then click Generate.</p>
+        <div class="steps">
+          <div class="step">
+            <span class="step-num">1</span>
+            <span class="step-text">Upload or paste your Swagger/OpenAPI specification</span>
+          </div>
+          <div class="step">
+            <span class="step-num">2</span>
+            <span class="step-text">Optionally add business rules and filter options</span>
+          </div>
+          <div class="step">
+            <span class="step-num">3</span>
+            <span class="step-text">Click Generate and download your test cases</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Loading State -->
+      <div class="loading-state" id="loadingView">
+        <div class="spinner"></div>
+        <div class="loading-msg" id="loadingMsg">Parsing API structure...</div>
+      </div>
+
+      <!-- Stats Bar -->
+      <div class="stats-bar" id="statsBar"></div>
+
+      <!-- Results -->
+      <div class="results" id="resultsView">
+        <div class="result-tabs">
+          <button class="result-tab-btn active" data-rtab="preview">📊 Preview</button>
+          <button class="result-tab-btn" data-rtab="jsonView">{ } JSON</button>
+          <button class="result-tab-btn" data-rtab="mdView">📝 Markdown</button>
+        </div>
+
+        <!-- Preview Tab -->
+        <div class="result-content active" id="preview" style="max-height: 460px; overflow: auto;">
+          <table class="preview-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Endpoint</th>
+                <th>Scenario</th>
+                <th>Category</th>
+                <th>Priority</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="previewBody"></tbody>
+          </table>
+        </div>
+
+        <!-- JSON Tab -->
+        <div class="result-content" id="jsonView">
+          <div class="code-block">
+            <button class="copy-btn" onclick="copyContent('jsonCode')">📋 Copy</button>
+            <pre id="jsonCode"></pre>
+          </div>
+        </div>
+
+        <!-- Markdown Tab -->
+        <div class="result-content" id="mdView">
+          <div style="display: flex; justify-content: flex-end; margin-bottom: 8px;">
+            <button class="copy-btn" style="position:static" onclick="copyContent('mdRaw')">📋 Copy Raw</button>
+          </div>
+          <div class="md-render" id="mdRender"></div>
+          <pre id="mdRaw" style="display:none;"></pre>
+        </div>
+
+        <!-- Downloads -->
+        <div class="download-bar" id="downloadBar"></div>
+      </div>
+
+      <!-- History -->
+      <div class="history" id="historySection">
+        <div class="section-title">📁 Recent Files</div>
+        <div id="historyList"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ── State ──
+    let swaggerContent = null;
+    let lastResult = null;
+
+    // ── Tab Switching ──
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById(btn.dataset.tab).classList.add('active');
+      });
+    });
+
+    document.querySelectorAll('.result-tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.result-tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.result-content').forEach(c => c.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById(btn.dataset.rtab).classList.add('active');
+      });
+    });
+
+    // ── Accordion ──
+    function toggleAccordion() {
+      document.getElementById('advancedAccordion').classList.toggle('open');
+    }
+
+    // ── File Upload ──
+    const uploadZone = document.getElementById('uploadZone');
+    const fileInput = document.getElementById('fileInput');
+
+    uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('dragover'); });
+    uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('dragover'));
+    uploadZone.addEventListener('drop', e => {
+      e.preventDefault();
+      uploadZone.classList.remove('dragover');
+      if (e.dataTransfer.files.length > 0) handleFile(e.dataTransfer.files[0]);
+    });
+    fileInput.addEventListener('change', e => {
+      if (e.target.files.length > 0) handleFile(e.target.files[0]);
+    });
+
+    async function handleFile(file) {
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+        const res = await fetch('/upload', { method: 'POST', body: formData });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        swaggerContent = data.content;
+        document.getElementById('uploadSuccess').style.display = 'block';
+        document.getElementById('uploadFileName').textContent = data.filename;
+        document.getElementById('uploadEndpoints').textContent = data.endpointCount;
+        hideError();
+      } catch (err) {
+        showError('File upload failed: ' + err.message);
+      }
+    }
+
+    // ── Generate ──
+    async function generate() {
+      const content = swaggerContent || document.getElementById('pasteInput').value.trim();
+      if (!content) {
+        showError('Please upload a file or paste Swagger content first.');
+        return;
+      }
+
+      const format = document.querySelector('input[name="format"]:checked')?.value || 'both';
+      const bizCtx = document.getElementById('businessContext').value.trim();
+      const minTests = parseInt(document.getElementById('minTests').value) || 10;
+      const filterTags = document.getElementById('filterTags').value.trim();
+      const filterPaths = document.getElementById('filterPaths').value.trim();
+
+      const btn = document.getElementById('generateBtn');
+      btn.disabled = true;
+      btn.innerHTML = '⏳ Generating...';
+      hideError();
+      showView('loading');
+
+      const messages = [
+        'Parsing API structure...',
+        'Analyzing endpoints...',
+        'Generating test cases with AI...',
+        'Building comprehensive scenarios...',
+        'Formatting output...',
+      ];
+      let msgIdx = 0;
+      const msgTimer = setInterval(() => {
+        msgIdx = (msgIdx + 1) % messages.length;
+        document.getElementById('loadingMsg').textContent = messages[msgIdx];
+      }, 3000);
+
+      try {
+        const res = await fetch('/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'swagger',
+            swaggerContent: content,
+            businessContext: bizCtx,
+            format,
+            filterTags: filterTags ? filterTags.split(',').map(t => t.trim()) : [],
+            filterPaths: filterPaths ? filterPaths.split(',').map(p => p.trim()) : [],
+            minTests,
+          }),
+        });
+
+        clearInterval(msgTimer);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+
+        lastResult = data;
+        renderResults(data);
+        showView('results');
+
+        // Save to localStorage
+        try {
+          localStorage.setItem('qa_last_result', JSON.stringify({ ...data, savedAt: new Date().toISOString() }));
+        } catch {}
+      } catch (err) {
+        clearInterval(msgTimer);
+        showError(err.message);
+        showView('placeholder');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<span class="shimmer"></span>⚡ Generate Test Cases';
+      }
+    }
+
+    // ── Render Results ──
+    function renderResults(data) {
+      const { testCases = [], metadata = {}, markdown = '', savedFiles = [] } = data;
+
+      // Stats bar
+      const statsBar = document.getElementById('statsBar');
+      statsBar.style.display = 'flex';
+      const cats = metadata.countByCategory || {};
+      statsBar.innerHTML = `
+        <span class="stat-badge total">${testCases.length} Total</span>
+        ${Object.entries(cats).map(([cat, count]) =>
+          `<span class="stat-badge ${cat}">${count} ${cap(cat)}</span>`
+        ).join('')}
+      `;
+
+      // Preview table
+      const tbody = document.getElementById('previewBody');
+      tbody.innerHTML = testCases.map(tc => `
+        <tr>
+          <td style="font-weight:600; color: var(--text-dim); white-space: nowrap;">${tc.id}</td>
+          <td style="white-space:nowrap; font-size:12px;"><strong>${tc.method}</strong> ${tc.endpoint?.replace(tc.method + ' ', '') || ''}</td>
+          <td>${tc.scenario}</td>
+          <td><span class="cat-badge cat-${tc.category}">${tc.category}</span></td>
+          <td class="pri-${tc.priority}">${tc.priority}</td>
+          <td style="color: var(--text-dim);">${tc.status}</td>
+        </tr>
+      `).join('');
+
+      // JSON view
+      const jsonStr = JSON.stringify({ metadata, testCases }, null, 2);
+      document.getElementById('jsonCode').textContent = jsonStr;
+
+      // Markdown view
+      document.getElementById('mdRaw').textContent = markdown;
+      document.getElementById('mdRender').innerHTML = simpleMarkdown(markdown);
+
+      // Download buttons
+      const dlBar = document.getElementById('downloadBar');
+      dlBar.innerHTML = '';
+      if (savedFiles.length > 0) {
+        savedFiles.forEach(f => {
+          const ext = f.endsWith('.md') ? 'Markdown' : 'JSON';
+          dlBar.innerHTML += `<a class="btn-download" href="/download/${encodeURIComponent(f)}" download>⬇ Download ${ext}</a>`;
+        });
+      }
+      // Always add copy buttons
+      dlBar.innerHTML += `<button class="btn-download" onclick="downloadBlob('json')">💾 Save JSON</button>`;
+      dlBar.innerHTML += `<button class="btn-download" onclick="downloadBlob('md')">💾 Save Markdown</button>`;
+    }
+
+    // ── View Switching ──
+    function showView(name) {
+      document.getElementById('placeholderView').style.display = name === 'placeholder' ? '' : 'none';
+      document.getElementById('loadingView').style.display = name === 'loading' ? 'block' : 'none';
+      document.getElementById('resultsView').style.display = name === 'results' ? 'block' : 'none';
+    }
+
+    // ── Error ──
+    function showError(msg) {
+      const box = document.getElementById('errorBox');
+      box.textContent = '❌ ' + msg;
+      box.style.display = 'block';
+    }
+    function hideError() { document.getElementById('errorBox').style.display = 'none'; }
+
+    // ── Copy ──
+    function copyContent(elId) {
+      const el = document.getElementById(elId);
+      const text = el.textContent;
+      navigator.clipboard.writeText(text).then(() => {
+        const btn = el.closest('.code-block')?.querySelector('.copy-btn') ||
+                    el.parentElement.querySelector('.copy-btn');
+        if (btn) { const orig = btn.textContent; btn.textContent = '✅ Copied!'; setTimeout(() => btn.textContent = orig, 1500); }
+      });
+    }
+
+    // ── Download Blob ──
+    function downloadBlob(type) {
+      if (!lastResult) return;
+      let content, filename, mime;
+      if (type === 'json') {
+        content = JSON.stringify({ metadata: lastResult.metadata, testCases: lastResult.testCases }, null, 2);
+        filename = `qa_test_cases_${Date.now()}.json`;
+        mime = 'application/json';
+      } else {
+        content = lastResult.markdown;
+        filename = `qa_test_cases_${Date.now()}.md`;
+        mime = 'text/markdown';
+      }
+      const blob = new Blob([content], { type: mime });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+
+    // ── Simple Markdown Renderer ──
+    function simpleMarkdown(md) {
+      if (!md) return '<p style="color:var(--text-dim)">No markdown output available.</p>';
+      let html = md
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/^#### (.+)$/gm, '<h4>$1</h4>')
+        .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+        .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+        .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/^---$/gm, '<hr>')
+        .replace(/^\| (.+) \|$/gm, (match) => {
+          const cells = match.slice(1, -1).split('|').map(c => c.trim());
+          return '<tr>' + cells.map(c => `<td>${c}</td>`).join('') + '</tr>';
+        })
+        .replace(/^- (.+)$/gm, '<li>$1</li>')
+        .replace(/```json\n?([\s\S]*?)```/g, '<pre><code>$1</code></pre>')
+        .replace(/```\n?([\s\S]*?)```/g, '<pre><code>$1</code></pre>')
+        .replace(/`([^`]+)`/g, '<code>$1</code>')
+        .replace(/\n{2,}/g, '<br><br>')
+        .replace(/\n/g, '<br>');
+      return html;
+    }
+
+    // ── Utilities ──
+    function cap(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : ''; }
+
+    // ── Load History ──
+    async function loadHistory() {
+      try {
+        const res = await fetch('/history');
+        const data = await res.json();
+        const list = document.getElementById('historyList');
+        if (!data.files || data.files.length === 0) {
+          list.innerHTML = '<div style="color:var(--text-dim);font-size:13px;">No generated files yet.</div>';
+          return;
+        }
+        list.innerHTML = data.files.slice(0, 10).map(f => `
+          <div class="history-item">
+            <div>
+              <div class="history-name">${f.filename}</div>
+              <div class="history-meta">${formatSize(f.size)} · ${new Date(f.modified).toLocaleDateString()}</div>
+            </div>
+            <a class="history-dl" href="/download/${encodeURIComponent(f.filename)}" download>⬇</a>
+          </div>
+        `).join('');
+      } catch {}
+    }
+
+    function formatSize(bytes) {
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+      return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+
+    // ── Health Check ──
+    async function checkHealth() {
+      try {
+        const res = await fetch('/health');
+        const data = await res.json();
+        const el = document.getElementById('apiStatus');
+        if (data.apiKeyConfigured) {
+          el.innerHTML = '<span class="status-dot" style="background:var(--green)"></span> API Connected';
+        } else {
+          el.innerHTML = '<span class="status-dot" style="background:var(--red);animation:none"></span> API Key Missing';
+        }
+      } catch {
+        document.getElementById('apiStatus').innerHTML =
+          '<span class="status-dot" style="background:var(--red);animation:none"></span> Server Offline';
+      }
+    }
+
+    // ── Keyboard Shortcut ──
+    document.addEventListener('keydown', e => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        generate();
+      }
+    });
+
+    // ── Restore Last Result ──
+    try {
+      const saved = localStorage.getItem('qa_last_result');
+      if (saved) {
+        const data = JSON.parse(saved);
+        if (data.testCases && data.testCases.length > 0) {
+          lastResult = data;
+          renderResults(data);
+          showView('results');
+        }
+      }
+    } catch {}
+
+    // ── Init ──
+    checkHealth();
+    loadHistory();
+  </script>
+</body>
+</html>

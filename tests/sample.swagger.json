@@ -1,0 +1,672 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "E-Commerce Platform API",
+    "description": "A comprehensive e-commerce API with authentication, user management, product catalog, and order management.",
+    "version": "1.0.0",
+    "contact": {
+      "name": "API Support",
+      "email": "api@example.com"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://api.example.com/v1",
+      "description": "Production"
+    }
+  ],
+  "tags": [
+    { "name": "auth", "description": "Authentication & authorization" },
+    { "name": "users", "description": "User profile management" },
+    { "name": "products", "description": "Product catalog" },
+    { "name": "orders", "description": "Order management" }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": { "type": "string" },
+          "message": { "type": "string" },
+          "statusCode": { "type": "integer" }
+        }
+      },
+      "UserRegistration": {
+        "type": "object",
+        "required": ["email", "password", "firstName", "lastName"],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "description": "User email address",
+            "maxLength": 255,
+            "example": "john@example.com"
+          },
+          "password": {
+            "type": "string",
+            "format": "password",
+            "minLength": 8,
+            "maxLength": 128,
+            "pattern": "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[@$!%*?&])[A-Za-z\\d@$!%*?&]+$",
+            "description": "Must include uppercase, lowercase, number, and special character"
+          },
+          "firstName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 50,
+            "description": "User first name"
+          },
+          "lastName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 50,
+            "description": "User last name"
+          },
+          "phone": {
+            "type": "string",
+            "pattern": "^\\+?[1-9]\\d{1,14}$",
+            "description": "Optional phone number in E.164 format"
+          },
+          "role": {
+            "type": "string",
+            "enum": ["customer", "vendor"],
+            "default": "customer",
+            "description": "User role"
+          }
+        }
+      },
+      "LoginRequest": {
+        "type": "object",
+        "required": ["email", "password"],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "password": {
+            "type": "string",
+            "format": "password"
+          },
+          "rememberMe": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      },
+      "AuthResponse": {
+        "type": "object",
+        "properties": {
+          "accessToken": { "type": "string" },
+          "refreshToken": { "type": "string" },
+          "expiresIn": { "type": "integer", "description": "Token TTL in seconds" },
+          "user": { "$ref": "#/components/schemas/UserProfile" }
+        }
+      },
+      "RefreshTokenRequest": {
+        "type": "object",
+        "required": ["refreshToken"],
+        "properties": {
+          "refreshToken": { "type": "string" }
+        }
+      },
+      "UserProfile": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "email": { "type": "string", "format": "email" },
+          "firstName": { "type": "string" },
+          "lastName": { "type": "string" },
+          "phone": { "type": "string", "nullable": true },
+          "role": { "type": "string", "enum": ["customer", "vendor", "admin"] },
+          "emailVerified": { "type": "boolean" },
+          "avatar": { "type": "string", "format": "uri", "nullable": true },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "UpdateProfile": {
+        "type": "object",
+        "properties": {
+          "firstName": { "type": "string", "minLength": 1, "maxLength": 50 },
+          "lastName": { "type": "string", "minLength": 1, "maxLength": 50 },
+          "phone": { "type": "string", "pattern": "^\\+?[1-9]\\d{1,14}$", "nullable": true },
+          "avatar": { "type": "string", "format": "uri", "nullable": true }
+        }
+      },
+      "Product": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "description": { "type": "string" },
+          "price": { "type": "number", "format": "float" },
+          "compareAtPrice": { "type": "number", "format": "float", "nullable": true },
+          "sku": { "type": "string" },
+          "category": { "type": "string", "enum": ["electronics", "clothing", "books", "home", "sports", "other"] },
+          "tags": { "type": "array", "items": { "type": "string" } },
+          "stock": { "type": "integer", "minimum": 0 },
+          "images": { "type": "array", "items": { "type": "string", "format": "uri" }, "maxItems": 10 },
+          "isActive": { "type": "boolean" },
+          "rating": { "type": "number", "minimum": 0, "maximum": 5 },
+          "reviewCount": { "type": "integer", "minimum": 0 },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "CreateProduct": {
+        "type": "object",
+        "required": ["name", "price", "sku", "category", "stock"],
+        "properties": {
+          "name": { "type": "string", "minLength": 2, "maxLength": 200, "description": "Product name" },
+          "description": { "type": "string", "maxLength": 5000, "description": "Product description" },
+          "price": { "type": "number", "format": "float", "minimum": 0.01, "maximum": 999999.99, "description": "Product price in USD" },
+          "compareAtPrice": { "type": "number", "format": "float", "minimum": 0.01, "nullable": true },
+          "sku": { "type": "string", "minLength": 3, "maxLength": 50, "pattern": "^[A-Za-z0-9-]+$", "description": "Stock Keeping Unit" },
+          "category": { "type": "string", "enum": ["electronics", "clothing", "books", "home", "sports", "other"] },
+          "tags": { "type": "array", "items": { "type": "string", "maxLength": 30 }, "maxItems": 20 },
+          "stock": { "type": "integer", "minimum": 0, "maximum": 999999, "description": "Available stock quantity" },
+          "images": { "type": "array", "items": { "type": "string", "format": "uri" }, "maxItems": 10 },
+          "isActive": { "type": "boolean", "default": true }
+        }
+      },
+      "UpdateProduct": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "minLength": 2, "maxLength": 200 },
+          "description": { "type": "string", "maxLength": 5000 },
+          "price": { "type": "number", "format": "float", "minimum": 0.01, "maximum": 999999.99 },
+          "compareAtPrice": { "type": "number", "format": "float", "minimum": 0.01, "nullable": true },
+          "category": { "type": "string", "enum": ["electronics", "clothing", "books", "home", "sports", "other"] },
+          "tags": { "type": "array", "items": { "type": "string" }, "maxItems": 20 },
+          "stock": { "type": "integer", "minimum": 0, "maximum": 999999 },
+          "images": { "type": "array", "items": { "type": "string", "format": "uri" }, "maxItems": 10 },
+          "isActive": { "type": "boolean" }
+        }
+      },
+      "OrderItem": {
+        "type": "object",
+        "required": ["productId", "quantity"],
+        "properties": {
+          "productId": { "type": "string", "format": "uuid" },
+          "quantity": { "type": "integer", "minimum": 1, "maximum": 100 }
+        }
+      },
+      "CreateOrder": {
+        "type": "object",
+        "required": ["items", "shippingAddress"],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/OrderItem" },
+            "minItems": 1,
+            "maxItems": 50
+          },
+          "shippingAddress": {
+            "type": "object",
+            "required": ["street", "city", "state", "zipCode", "country"],
+            "properties": {
+              "street": { "type": "string", "minLength": 5, "maxLength": 200 },
+              "city": { "type": "string", "minLength": 2, "maxLength": 100 },
+              "state": { "type": "string", "minLength": 2, "maxLength": 100 },
+              "zipCode": { "type": "string", "pattern": "^[0-9]{5}(-[0-9]{4})?$" },
+              "country": { "type": "string", "minLength": 2, "maxLength": 2, "description": "ISO 3166-1 alpha-2 code" }
+            }
+          },
+          "couponCode": { "type": "string", "maxLength": 30, "nullable": true },
+          "notes": { "type": "string", "maxLength": 500, "nullable": true }
+        }
+      },
+      "Order": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "userId": { "type": "string", "format": "uuid" },
+          "items": { "type": "array", "items": { "$ref": "#/components/schemas/OrderItem" } },
+          "subtotal": { "type": "number", "format": "float" },
+          "tax": { "type": "number", "format": "float" },
+          "shipping": { "type": "number", "format": "float" },
+          "discount": { "type": "number", "format": "float" },
+          "total": { "type": "number", "format": "float" },
+          "status": { "type": "string", "enum": ["pending", "confirmed", "processing", "shipped", "delivered", "cancelled", "refunded"] },
+          "shippingAddress": { "type": "object" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "PaginatedResponse": {
+        "type": "object",
+        "properties": {
+          "data": { "type": "array", "items": {} },
+          "pagination": {
+            "type": "object",
+            "properties": {
+              "page": { "type": "integer" },
+              "limit": { "type": "integer" },
+              "total": { "type": "integer" },
+              "totalPages": { "type": "integer" }
+            }
+          }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/auth/register": {
+      "post": {
+        "tags": ["auth"],
+        "summary": "Register a new user",
+        "operationId": "registerUser",
+        "description": "Create a new user account. Email must be unique. A verification email will be sent.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UserRegistration" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "User registered successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AuthResponse" }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error (invalid email, weak password, etc.)",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          },
+          "409": {
+            "description": "Email already registered",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          }
+        }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "tags": ["auth"],
+        "summary": "Login with email and password",
+        "operationId": "loginUser",
+        "description": "Authenticate a user and return JWT tokens.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/LoginRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Login successful",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AuthResponse" } } }
+          },
+          "400": { "description": "Invalid credentials format" },
+          "401": { "description": "Invalid email or password" },
+          "423": { "description": "Account locked after too many failed attempts" }
+        }
+      }
+    },
+    "/auth/refresh": {
+      "post": {
+        "tags": ["auth"],
+        "summary": "Refresh access token",
+        "operationId": "refreshToken",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/RefreshTokenRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Token refreshed",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AuthResponse" } } }
+          },
+          "401": { "description": "Invalid or expired refresh token" }
+        }
+      }
+    },
+    "/auth/logout": {
+      "delete": {
+        "tags": ["auth"],
+        "summary": "Logout user",
+        "operationId": "logoutUser",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "204": { "description": "Logged out successfully" },
+          "401": { "description": "Not authenticated" }
+        }
+      }
+    },
+    "/users/me": {
+      "get": {
+        "tags": ["users"],
+        "summary": "Get current user profile",
+        "operationId": "getCurrentUser",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "User profile",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UserProfile" } } }
+          },
+          "401": { "description": "Not authenticated" }
+        }
+      },
+      "put": {
+        "tags": ["users"],
+        "summary": "Update current user profile",
+        "operationId": "updateCurrentUser",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateProfile" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Profile updated",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UserProfile" } } }
+          },
+          "400": { "description": "Validation error" },
+          "401": { "description": "Not authenticated" }
+        }
+      }
+    },
+    "/users": {
+      "get": {
+        "tags": ["users"],
+        "summary": "List all users (admin only)",
+        "operationId": "listUsers",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": { "type": "integer", "minimum": 1, "default": 1 },
+            "description": "Page number"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 20 },
+            "description": "Items per page"
+          },
+          {
+            "name": "role",
+            "in": "query",
+            "schema": { "type": "string", "enum": ["customer", "vendor", "admin"] },
+            "description": "Filter by role"
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "schema": { "type": "string", "maxLength": 100 },
+            "description": "Search by name or email"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated user list",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PaginatedResponse" } } }
+          },
+          "401": { "description": "Not authenticated" },
+          "403": { "description": "Admin access required" }
+        }
+      }
+    },
+    "/products": {
+      "get": {
+        "tags": ["products"],
+        "summary": "List products with filters and pagination",
+        "operationId": "listProducts",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": { "type": "integer", "minimum": 1, "default": 1 }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 20 }
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "schema": { "type": "string", "enum": ["electronics", "clothing", "books", "home", "sports", "other"] }
+          },
+          {
+            "name": "minPrice",
+            "in": "query",
+            "schema": { "type": "number", "minimum": 0 }
+          },
+          {
+            "name": "maxPrice",
+            "in": "query",
+            "schema": { "type": "number", "minimum": 0 }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "schema": { "type": "string", "maxLength": 200 },
+            "description": "Search product name and description"
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "schema": { "type": "string", "enum": ["price_asc", "price_desc", "name_asc", "name_desc", "newest", "rating"] },
+            "description": "Sort order"
+          },
+          {
+            "name": "inStock",
+            "in": "query",
+            "schema": { "type": "boolean" },
+            "description": "Filter in-stock items only"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated product list",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PaginatedResponse" } } }
+          }
+        }
+      },
+      "post": {
+        "tags": ["products"],
+        "summary": "Create a new product (admin only)",
+        "operationId": "createProduct",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateProduct" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Product created",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Product" } } }
+          },
+          "400": { "description": "Validation error" },
+          "401": { "description": "Not authenticated" },
+          "403": { "description": "Admin access required" },
+          "409": { "description": "SKU already exists" }
+        }
+      }
+    },
+    "/products/{id}": {
+      "get": {
+        "tags": ["products"],
+        "summary": "Get product by ID",
+        "operationId": "getProduct",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" },
+            "description": "Product UUID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Product details",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Product" } } }
+          },
+          "404": { "description": "Product not found" }
+        }
+      },
+      "put": {
+        "tags": ["products"],
+        "summary": "Update product (admin only)",
+        "operationId": "updateProduct",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateProduct" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Product updated",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Product" } } }
+          },
+          "400": { "description": "Validation error" },
+          "401": { "description": "Not authenticated" },
+          "403": { "description": "Admin access required" },
+          "404": { "description": "Product not found" }
+        }
+      },
+      "delete": {
+        "tags": ["products"],
+        "summary": "Delete product (admin only)",
+        "operationId": "deleteProduct",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "responses": {
+          "204": { "description": "Product deleted" },
+          "401": { "description": "Not authenticated" },
+          "403": { "description": "Admin access required" },
+          "404": { "description": "Product not found" }
+        }
+      }
+    },
+    "/orders": {
+      "post": {
+        "tags": ["orders"],
+        "summary": "Create a new order",
+        "operationId": "createOrder",
+        "security": [{ "bearerAuth": [] }],
+        "description": "Place a new order. User must be authenticated. Products must be in stock.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateOrder" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Order created",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Order" } } }
+          },
+          "400": { "description": "Validation error or insufficient stock" },
+          "401": { "description": "Not authenticated" },
+          "404": { "description": "Product not found" }
+        }
+      },
+      "get": {
+        "tags": ["orders"],
+        "summary": "List user orders",
+        "operationId": "listOrders",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": { "type": "integer", "minimum": 1, "default": 1 }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer", "minimum": 1, "maximum": 50, "default": 10 }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": { "type": "string", "enum": ["pending", "confirmed", "processing", "shipped", "delivered", "cancelled", "refunded"] }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated order list",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PaginatedResponse" } } }
+          },
+          "401": { "description": "Not authenticated" }
+        }
+      }
+    },
+    "/orders/{id}": {
+      "get": {
+        "tags": ["orders"],
+        "summary": "Get order details",
+        "operationId": "getOrder",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Order details",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Order" } } }
+          },
+          "401": { "description": "Not authenticated" },
+          "403": { "description": "Can only view your own orders" },
+          "404": { "description": "Order not found" }
+        }
+      }
+    }
+  }
+}
