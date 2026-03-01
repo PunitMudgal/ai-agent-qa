@@ -3,34 +3,39 @@
  * @description Main orchestration module that combines parsers, prompt builder, and AI client.
  */
 
-const { parseSwaggerFile, parseSwaggerString } = require('../parsers/swaggerParser');
-const { parseRouteDirectory, parseRouteFiles } = require('../parsers/routeParser');
-const { parseControllerDirectory, parseControllerFiles } = require('../parsers/controllerParser');
-const { buildPrompt, buildBatchPrompt } = require('../ai/promptBuilder');
-const { generateTestCases, initGroqClient } = require('../ai/groqClient');
-const { formatTestCases: formatJson, saveToFile: saveJson } = require('../formatters/jsonFormatter');
-const { formatTestCases: formatMd, saveToFile: saveMd } = require('../formatters/markdownFormatter');
-const { ensureOutputDir, generateBatchFilename } = require('../utils/fileUtils');
-const logger = require('../utils/logger');
-const path = require('path');
+import path from 'path';
+import { parseSwaggerFile, parseSwaggerString } from '../parsers/swaggerParser';
+import { parseRouteDirectory } from '../parsers/routeParser';
+import { parseControllerDirectory } from '../parsers/controllerParser';
+import { buildPrompt } from '../ai/promptBuilder';
+import { generateTestCases, initGroqClient } from '../ai/groqClient';
+import { formatTestCases as formatJson, saveToFile as saveJson } from '../formatters/jsonFormatter';
+import { formatTestCases as formatMd, saveToFile as saveMd } from '../formatters/markdownFormatter';
+import { ensureOutputDir, generateBatchFilename } from '../utils/fileUtils';
+import * as logger from '../utils/logger';
+import type {
+  Endpoint,
+  TestCase,
+  ControllerHint,
+  GenerationOptions,
+  GenerationMixedOptions,
+} from '../types';
 
 const GROQ_DAILY_LIMIT_MSG =
   'Daily token limit reached for Groq. Retrying will not help until the limit resets (usually next day).\n' +
   '  Options: 1) Wait and run again later  2) Use --filter-paths or --filter-tags to generate for fewer endpoints  3) Reduce --min-tests  4) Upgrade at https://console.groq.com/settings/billing';
 
-/** If err is Groq daily limit, log once and rethrow so the run aborts without spamming. */
-function handleGenerationError(err, label) {
-  if (err.code === 'GROQ_DAILY_LIMIT') {
+function handleGenerationError(err: unknown, label: string): void {
+  const code = (err as { code?: string }).code;
+  if (code === 'GROQ_DAILY_LIMIT') {
     logger.warn(GROQ_DAILY_LIMIT_MSG);
     throw err;
   }
-  logger.warn(`Failed to generate for ${label}: ${err.message}`);
+  const message = err instanceof Error ? err.message : String(err);
+  logger.warn(`Failed to generate for ${label}: ${message}`);
 }
 
-/**
- * Default options for generation.
- */
-const DEFAULT_OPTIONS = {
+const DEFAULT_OPTIONS: GenerationOptions = {
   format: 'json',
   outputDir: './output',
   businessContext: '',
@@ -40,19 +45,16 @@ const DEFAULT_OPTIONS = {
   includeCategories: ['positive', 'negative', 'edge', 'validation', 'boundary'],
 };
 
-/**
- * Filter endpoints by tags and paths.
- * @param {Array<object>} endpoints
- * @param {object} options
- * @returns {Array<object>}
- */
-function filterEndpoints(endpoints, options) {
+function filterEndpoints(
+  endpoints: Endpoint[],
+  options: GenerationOptions
+): Endpoint[] {
   let filtered = [...endpoints];
 
   if (options.filterTags && options.filterTags.length > 0) {
     const tags = options.filterTags.map(t => t.toLowerCase().trim());
-    filtered = filtered.filter(ep =>
-      ep.tags && ep.tags.some(t => tags.includes(t.toLowerCase()))
+    filtered = filtered.filter(
+      ep => ep.tags && ep.tags.some(t => tags.includes(t.toLowerCase()))
     );
     logger.debug(`Filtered by tags: ${filtered.length} endpoints remaining`);
   }
@@ -68,32 +70,29 @@ function filterEndpoints(endpoints, options) {
   return filtered;
 }
 
-/**
- * Assign sequential IDs to test cases, ensuring uniqueness.
- * @param {Array<object>} testCases
- * @param {number} [startId=1]
- * @returns {Array<object>}
- */
-function assignIds(testCases, startId = 1) {
-  return testCases.map((tc, i) => ({
-    ...tc,
-    id: `TC-${String(startId + i).padStart(3, '0')}`,
-    status: tc.status || 'Pending',
-  }));
+function assignIds(testCases: unknown[], startId = 1): TestCase[] {
+  return testCases.map((tc, i) => {
+    const record = (typeof tc === 'object' && tc !== null ? tc : {}) as Record<
+      string,
+      unknown
+    >;
+    return {
+      ...record,
+      id: `TC-${String(startId + i).padStart(3, '0')}`,
+      status: (record.status as string) ?? 'Pending',
+    } as TestCase;
+  });
 }
 
-/**
- * Save test cases to file(s) based on format option.
- * @param {Array<object>} testCases
- * @param {object} options
- * @returns {Promise<string[]>} Array of saved file paths.
- */
-async function saveOutput(testCases, options) {
-  const outputDir = path.resolve(options.outputDir || DEFAULT_OPTIONS.outputDir);
+async function saveOutput(
+  testCases: TestCase[],
+  options: GenerationOptions
+): Promise<string[]> {
+  const outputDir = path.resolve(options.outputDir ?? DEFAULT_OPTIONS.outputDir);
   await ensureOutputDir(outputDir);
-  const savedFiles = [];
+  const savedFiles: string[] = [];
 
-  const format = options.format || 'json';
+  const format = options.format ?? 'json';
 
   if (format === 'json' || format === 'both') {
     const filename = generateBatchFilename('json');
@@ -116,13 +115,15 @@ async function saveOutput(testCases, options) {
   return savedFiles;
 }
 
-/**
- * Generate test cases from a Swagger/OpenAPI file.
- * @param {string} swaggerPath - Path to swagger file.
- * @param {object} [options] - Generation options.
- * @returns {Promise<{testCases: Array, savedFiles: string[]}>}
- */
-async function generateFromSwagger(swaggerPath, options = {}) {
+export interface GenerateResult {
+  testCases: TestCase[];
+  savedFiles: string[];
+}
+
+export async function generateFromSwagger(
+  swaggerPath: string,
+  options: Partial<GenerationOptions> = {}
+): Promise<GenerateResult> {
   const opts = { ...DEFAULT_OPTIONS, ...options };
   initGroqClient();
 
@@ -138,13 +139,15 @@ async function generateFromSwagger(swaggerPath, options = {}) {
 
   logger.info(`Generating test cases for ${endpoints.length} endpoints...`);
 
-  const allTestCases = [];
+  const allTestCases: TestCase[] = [];
   let idCounter = 1;
 
   for (let i = 0; i < endpoints.length; i++) {
     const ep = endpoints[i];
     const label = `${ep.method} ${ep.path}`;
-    logger.updateSpinner(`[${i + 1}/${endpoints.length}] Generating tests for ${label}...`);
+    logger.updateSpinner(
+      `[${i + 1}/${endpoints.length}] Generating tests for ${label}...`
+    );
 
     try {
       const { systemPrompt, userPrompt } = buildPrompt(ep, opts.businessContext);
@@ -168,13 +171,10 @@ async function generateFromSwagger(swaggerPath, options = {}) {
   return { testCases: allTestCases, savedFiles };
 }
 
-/**
- * Generate test cases from a Swagger string (for web UI).
- * @param {string} swaggerContent - Raw JSON/YAML string.
- * @param {object} [options]
- * @returns {Promise<{testCases: Array, savedFiles: string[]}>}
- */
-async function generateFromSwaggerString(swaggerContent, options = {}) {
+export async function generateFromSwaggerString(
+  swaggerContent: string,
+  options: Partial<GenerationOptions> = {}
+): Promise<GenerateResult> {
   const opts = { ...DEFAULT_OPTIONS, ...options };
   initGroqClient();
 
@@ -188,7 +188,7 @@ async function generateFromSwaggerString(swaggerContent, options = {}) {
     return { testCases: [], savedFiles: [] };
   }
 
-  const allTestCases = [];
+  const allTestCases: TestCase[] = [];
   let idCounter = 1;
 
   for (let i = 0; i < endpoints.length; i++) {
@@ -211,14 +211,11 @@ async function generateFromSwaggerString(swaggerContent, options = {}) {
   return { testCases: allTestCases, savedFiles };
 }
 
-/**
- * Generate test cases from Express routes and controllers.
- * @param {string} routesDir - Path to routes directory.
- * @param {string} [controllersDir] - Path to controllers directory.
- * @param {object} [options]
- * @returns {Promise<{testCases: Array, savedFiles: string[]}>}
- */
-async function generateFromRoutes(routesDir, controllersDir, options = {}) {
+export async function generateFromRoutes(
+  routesDir: string,
+  controllersDir: string | null,
+  options: Partial<GenerationOptions> = {}
+): Promise<GenerateResult> {
   const opts = { ...DEFAULT_OPTIONS, ...options };
   initGroqClient();
 
@@ -226,27 +223,29 @@ async function generateFromRoutes(routesDir, controllersDir, options = {}) {
   const routes = await parseRouteDirectory(routesDir);
   logger.success(`Found ${routes.length} routes`);
 
-  let controllerHints = [];
+  let controllerHints: ControllerHint[] = [];
   if (controllersDir) {
     logger.info('Scanning controller files...');
     controllerHints = await parseControllerDirectory(controllersDir);
-    logger.success(`Extracted hints from ${controllerHints.length} controller functions`);
+    logger.success(
+      `Extracted hints from ${controllerHints.length} controller functions`
+    );
   }
 
-  const allTestCases = [];
+  const allTestCases: TestCase[] = [];
   let idCounter = 1;
 
   for (let i = 0; i < routes.length; i++) {
     const route = routes[i];
     const label = `${route.method} ${route.path}`;
 
-    // Find matching controller hint
-    const hint = controllerHints.find(h =>
-      h.functionName.toLowerCase() === route.controllerFunction.toLowerCase()
+    const hint = controllerHints.find(
+      h =>
+        h.functionName.toLowerCase() ===
+        route.controllerFunction.toLowerCase()
     );
 
-    // Build a minimal endpoint object from routes
-    const endpoint = {
+    const endpoint: Endpoint = {
       method: route.method,
       path: route.path,
       operationId: route.controllerFunction,
@@ -256,13 +255,21 @@ async function generateFromRoutes(routesDir, controllersDir, options = {}) {
       parameters: [],
       requestBody: null,
       responses: [],
-      security: route.middlewares.some(m =>
-        m.toLowerCase().includes('auth') || m.toLowerCase().includes('protect')
-      ) ? [{ bearerAuth: [] }] : null,
+      security: route.middlewares.some(
+        m =>
+          m.toLowerCase().includes('auth') ||
+          m.toLowerCase().includes('protect')
+      )
+        ? [{ bearerAuth: [] }]
+        : null,
     };
 
     try {
-      const { systemPrompt, userPrompt } = buildPrompt(endpoint, opts.businessContext, hint);
+      const { systemPrompt, userPrompt } = buildPrompt(
+        endpoint,
+        opts.businessContext,
+        hint ?? null
+      );
       const testCases = await generateTestCases(userPrompt, { systemPrompt });
 
       const withIds = assignIds(testCases, idCounter);
@@ -277,23 +284,15 @@ async function generateFromRoutes(routesDir, controllersDir, options = {}) {
   return { testCases: allTestCases, savedFiles };
 }
 
-/**
- * Generate test cases from all available sources combined.
- * @param {object} [options]
- * @param {string} [options.swagger] - Swagger file path.
- * @param {string} [options.routes] - Routes directory path.
- * @param {string} [options.controllers] - Controllers directory path.
- * @param {string} [options.businessContext] - Business context.
- * @returns {Promise<{testCases: Array, savedFiles: string[]}>}
- */
-async function generateFromMixed(options = {}) {
+export async function generateFromMixed(
+  options: Partial<GenerationMixedOptions> = {}
+): Promise<GenerateResult> {
   const opts = { ...DEFAULT_OPTIONS, ...options };
   initGroqClient();
 
-  let endpoints = [];
-  let controllerHints = [];
+  let endpoints: Endpoint[] = [];
+  let controllerHints: ControllerHint[] = [];
 
-  // Parse swagger if provided
   if (opts.swagger) {
     logger.info('Parsing Swagger file...');
     const swaggerEndpoints = await parseSwaggerFile(opts.swagger);
@@ -301,13 +300,11 @@ async function generateFromMixed(options = {}) {
     logger.success(`Found ${swaggerEndpoints.length} endpoints from Swagger`);
   }
 
-  // Parse routes if provided
   if (opts.routes) {
     logger.info('Scanning route files...');
     const routes = await parseRouteDirectory(opts.routes);
     logger.success(`Found ${routes.length} routes`);
 
-    // Convert routes to endpoint format, avoiding duplicates
     for (const route of routes) {
       const exists = endpoints.find(
         ep => ep.method === route.method && ep.path === route.path
@@ -325,13 +322,14 @@ async function generateFromMixed(options = {}) {
           responses: [],
           security: route.middlewares.some(m =>
             m.toLowerCase().includes('auth')
-          ) ? [{ bearerAuth: [] }] : null,
+          )
+            ? [{ bearerAuth: [] }]
+            : null,
         });
       }
     }
   }
 
-  // Parse controllers if provided
   if (opts.controllers) {
     logger.info('Scanning controller files...');
     controllerHints = await parseControllerDirectory(opts.controllers);
@@ -346,21 +344,26 @@ async function generateFromMixed(options = {}) {
 
   logger.info(`Generating test cases for ${endpoints.length} endpoints...`);
 
-  const allTestCases = [];
+  const allTestCases: TestCase[] = [];
   let idCounter = 1;
 
   for (let i = 0; i < endpoints.length; i++) {
     const ep = endpoints[i];
     const label = `${ep.method} ${ep.path}`;
 
-    // Find matching controller hint
     const hint = controllerHints.find(h => {
       if (!ep.operationId) return false;
-      return h.functionName.toLowerCase() === ep.operationId.toLowerCase();
+      return (
+        h.functionName.toLowerCase() === ep.operationId!.toLowerCase()
+      );
     });
 
     try {
-      const { systemPrompt, userPrompt } = buildPrompt(ep, opts.businessContext, hint);
+      const { systemPrompt, userPrompt } = buildPrompt(
+        ep,
+        opts.businessContext,
+        hint ?? null
+      );
       const testCases = await generateTestCases(userPrompt, { systemPrompt });
 
       const withIds = assignIds(testCases, idCounter);
@@ -375,10 +378,4 @@ async function generateFromMixed(options = {}) {
   return { testCases: allTestCases, savedFiles };
 }
 
-module.exports = {
-  generateFromSwagger,
-  generateFromSwaggerString,
-  generateFromRoutes,
-  generateFromMixed,
-  filterEndpoints,
-};
+export { filterEndpoints };

@@ -3,40 +3,26 @@
  * @description Scans Express.js route files and extracts API structure using regex patterns.
  */
 
-const path = require('path');
-const logger = require('../utils/logger');
-const { scanDirectory, readFileContent } = require('../utils/fileUtils');
+import path from 'path';
+import * as logger from '../utils/logger';
+import { scanDirectory, readFileContent } from '../utils/fileUtils';
+import type { RouteInfo } from '../types';
 
-/**
- * Regex patterns to match Express route definitions.
- */
-const ROUTE_PATTERNS = [
-  // router.get('/path', handler)  or router.get('/path', middleware, handler)
-  /(?:router|app)\.(get|post|put|delete|patch)\s*\(\s*['"`]([^'"`]+)['"`]\s*,\s*([^)]+)\)/gi,
-];
-
-const ROUTER_USE_PATTERN = /(?:router|app)\.use\s*\(\s*['"`]([^'"`]+)['"`]\s*,\s*([^)]+)\)/gi;
-const ROUTER_INIT_PATTERN = /(?:const|let|var)\s+(\w+)\s*=\s*(?:express\.Router\(\)|require\(['"`]express['"`]\)\.Router\(\))/gi;
-const MIDDLEWARE_PATTERNS = {
+const ROUTER_INIT_PATTERN =
+  /(?:const|let|var)\s+(\w+)\s*=\s*(?:express\.Router\(\)|require\(['"`]express['"`]\)\.Router\(\))/gi;
+const MIDDLEWARE_PATTERNS: Record<string, RegExp> = {
   expressValidator: /(?:body|param|query|header|check)\s*\(\s*['"`]([^'"`]+)['"`]\)/g,
   joi: /(?:Joi|joi)\.\w+/g,
   celebrate: /celebrate\s*\(\s*{/g,
   zod: /(?:z\.\w+|\.parse\(|\.safeParse\()/g,
 };
 
-/**
- * Parse a single route file for Express route definitions.
- * @param {string} filePath - Path to the route file.
- * @returns {Promise<Array<object>>} Array of route objects.
- */
-async function parseRouteFile(filePath) {
-  const routes = [];
+export async function parseRouteFile(filePath: string): Promise<RouteInfo[]> {
+  const routes: RouteInfo[] = [];
   try {
     const content = await readFileContent(filePath);
     const filename = path.basename(filePath);
-    const lines = content.split('\n');
 
-    // Detect router initialization
     let routerName = 'router';
     const routerMatch = ROUTER_INIT_PATTERN.exec(content);
     if (routerMatch) {
@@ -44,51 +30,46 @@ async function parseRouteFile(filePath) {
     }
     ROUTER_INIT_PATTERN.lastIndex = 0;
 
-    // Detect base path from router.use
     let basePath = '';
-    let useMatch;
     const useRegex = new RegExp(
       `(?:app)\\.use\\s*\\(\\s*['"\`]([^'"\`]+)['"\`]\\s*,\\s*${routerName}`,
       'gi'
     );
+    let useMatch: RegExpExecArray | null;
     while ((useMatch = useRegex.exec(content)) !== null) {
       basePath = useMatch[1];
     }
 
-    // Detect validation middleware in file
-    const validationHints = [];
-    for (const [name, pattern] of Object.entries(MIDDLEWARE_PATTERNS)) {
+    const validationHints: string[] = [];
+    for (const [hintName, pattern] of Object.entries(MIDDLEWARE_PATTERNS)) {
       if (pattern.test(content)) {
-        validationHints.push(name);
+        validationHints.push(hintName);
       }
       pattern.lastIndex = 0;
     }
 
-    // Build a more flexible regex for the detected router name
     const routeRegex = new RegExp(
       `(?:${routerName}|router|app)\\.(get|post|put|delete|patch)\\s*\\(\\s*['"\`]([^'"\`]+)['"\`]\\s*,\\s*([^)]+)\\)`,
       'gi'
     );
 
-    let match;
+    let match: RegExpExecArray | null;
     while ((match = routeRegex.exec(content)) !== null) {
       const method = match[1].toUpperCase();
       const routePath = match[2];
       const handlersRaw = match[3].trim();
 
-      // Parse handler chain
       const handlers = handlersRaw
         .split(',')
         .map(h => h.trim())
         .filter(h => h && !h.startsWith('//'));
 
       const middlewares = handlers.slice(0, -1);
-      const controllerRef = handlers[handlers.length - 1] || '';
+      const controllerRef = handlers[handlers.length - 1] ?? '';
 
-      // Extract controller function name
-      let controllerFunction = controllerRef;
+      let controllerFunction: string = controllerRef;
       if (controllerRef.includes('.')) {
-        controllerFunction = controllerRef.split('.').pop();
+        controllerFunction = controllerRef.split('.').pop() ?? controllerRef;
       }
 
       const fullPath = basePath + routePath;
@@ -109,19 +90,15 @@ async function parseRouteFile(filePath) {
 
     logger.debug(`Found ${routes.length} routes in ${filename}`);
   } catch (err) {
-    logger.warn(`Failed to parse route file ${filePath}: ${err.message}`);
+    const message = err instanceof Error ? err.message : String(err);
+    logger.warn(`Failed to parse route file ${filePath}: ${message}`);
   }
 
   return routes;
 }
 
-/**
- * Parse multiple route files.
- * @param {string[]} filePaths - Array of file paths to parse.
- * @returns {Promise<Array<object>>} Combined array of route objects.
- */
-async function parseRouteFiles(filePaths) {
-  const allRoutes = [];
+export async function parseRouteFiles(filePaths: string[]): Promise<RouteInfo[]> {
+  const allRoutes: RouteInfo[] = [];
   for (const fp of filePaths) {
     const routes = await parseRouteFile(fp);
     allRoutes.push(...routes);
@@ -129,18 +106,12 @@ async function parseRouteFiles(filePaths) {
   return allRoutes;
 }
 
-/**
- * Scan a directory for route files and parse them.
- * @param {string} dirPath - Directory to scan.
- * @returns {Promise<Array<object>>} Combined array of route objects.
- */
-async function parseRouteDirectory(dirPath) {
+export async function parseRouteDirectory(dirPath: string): Promise<RouteInfo[]> {
   try {
     const resolvedDir = path.resolve(dirPath);
     logger.debug(`Scanning for route files in: ${resolvedDir}`);
     const files = await scanDirectory(resolvedDir, ['.js', '.ts']);
 
-    // Filter to likely route files
     const routeFiles = files.filter(f => {
       const base = path.basename(f).toLowerCase();
       return (
@@ -159,13 +130,8 @@ async function parseRouteDirectory(dirPath) {
     logger.debug(`Found ${routeFiles.length} route file(s)`);
     return parseRouteFiles(routeFiles);
   } catch (err) {
-    logger.error(`Failed to scan route directory: ${err.message}`);
+    const message = err instanceof Error ? err.message : String(err);
+    logger.error(`Failed to scan route directory: ${message}`);
     throw err;
   }
 }
-
-module.exports = {
-  parseRouteDirectory,
-  parseRouteFiles,
-  parseRouteFile,
-};
