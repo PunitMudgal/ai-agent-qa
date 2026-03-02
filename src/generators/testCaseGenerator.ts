@@ -13,6 +13,12 @@ import { formatTestCases as formatJson, saveToFile as saveJson } from '../format
 import { formatTestCases as formatMd, saveToFile as saveMd } from '../formatters/markdownFormatter';
 import { ensureOutputDir, generateBatchFilename } from '../utils/fileUtils';
 import * as logger from '../utils/logger';
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+const API_CALL_DELAY_MS = 500;
 import type {
   Endpoint,
   TestCase,
@@ -88,7 +94,7 @@ async function saveOutput(
   testCases: TestCase[],
   options: GenerationOptions
 ): Promise<string[]> {
-  const outputDir = path.resolve(options.outputDir ?? DEFAULT_OPTIONS.outputDir);
+  const outputDir = path.resolve(options.outputDir || DEFAULT_OPTIONS.outputDir);
   await ensureOutputDir(outputDir);
   const savedFiles: string[] = [];
 
@@ -153,7 +159,6 @@ export async function generateFromSwagger(
       const { systemPrompt, userPrompt } = buildPrompt(ep, opts.businessContext);
       const testCases = await generateTestCases(userPrompt, {
         systemPrompt,
-        maxTokens: 4000,
       });
 
       const withIds = assignIds(testCases, idCounter);
@@ -163,6 +168,8 @@ export async function generateFromSwagger(
     } catch (err) {
       handleGenerationError(err, label);
     }
+
+    if (i < endpoints.length - 1) await sleep(API_CALL_DELAY_MS);
   }
 
   logger.info(`Total test cases generated: ${allTestCases.length}`);
@@ -205,6 +212,8 @@ export async function generateFromSwaggerString(
     } catch (err) {
       handleGenerationError(err, label);
     }
+
+    if (i < endpoints.length - 1) await sleep(API_CALL_DELAY_MS);
   }
 
   const savedFiles = await saveOutput(allTestCases, opts);
@@ -278,6 +287,8 @@ export async function generateFromRoutes(
     } catch (err) {
       handleGenerationError(err, label);
     }
+
+    if (i < routes.length - 1) await sleep(API_CALL_DELAY_MS);
   }
 
   const savedFiles = await saveOutput(allTestCases, opts);
@@ -372,6 +383,8 @@ export async function generateFromMixed(
     } catch (err) {
       handleGenerationError(err, label);
     }
+
+    if (i < endpoints.length - 1) await sleep(API_CALL_DELAY_MS);
   }
 
   const savedFiles = await saveOutput(allTestCases, opts);

@@ -5,74 +5,31 @@
 
 import type { Endpoint, ControllerHint } from '../types';
 
-export const SYSTEM_PROMPT = `You are a senior QA engineer with 10+ years of experience in API testing. Your job is to generate comprehensive, realistic test cases for the given API endpoint.
+export const SYSTEM_PROMPT = `You are a senior QA engineer. Generate test cases for API endpoints.
 
-For EVERY endpoint, you must generate test cases covering ALL of these categories:
+You MUST return ONLY valid JSON. No text before or after. No markdown. No code fences.
 
-POSITIVE TESTS:
-- Happy path with valid, minimal required data
-- Happy path with all optional fields provided
-- Happy path with boundary-valid values (max length strings, max/min numbers)
+Return a JSON object with a "testCases" key containing an array.
 
-NEGATIVE TESTS:
-- Missing each required field (one test per required field)
-- Invalid data types for each field (string where number expected, etc.)
-- Invalid enum values
-- Unauthorized access (missing/invalid auth token)
-- Forbidden access (authenticated but wrong role/ownership)
-- Non-existent resource ID (404 scenarios)
+Each test case has these fields:
+- id: string like "TC-001"
+- endpoint: string like "POST /users"
+- method: string like "POST"
+- scenario: string describing what is tested
+- category: one of "positive", "negative", "edge", "validation", "boundary"
+- priority: one of "high", "medium", "low"
+- inputData: object with headers, pathParams, queryParams, body (all objects)
+- expectedOutput: object with statusCode (number), bodyContains (object), bodyExcludes (array of strings), headers (object)
+- preconditions: string
+- notes: string
+- status: "Pending"
 
-EDGE CASE TESTS:
-- Empty string for string fields
-- Null values for nullable fields
-- Whitespace-only strings
-- Very long strings (> max length)
-- Special characters and Unicode in string fields
-- SQL injection patterns in string inputs
-- XSS patterns in string inputs
-- Negative numbers where positive expected
-- Zero values
-- Future/past dates where relevant
-
-VALIDATION TESTS:
-- Each field format validation (email format, phone format, URL format)
-- Regex pattern violations if schema specifies pattern
-- Min/max length violations
-- Min/max value violations
-
-BOUNDARY CONDITIONS:
-- Exactly at minimum length/value
-- Exactly at maximum length/value
-- One below minimum
-- One above maximum
-- Empty arrays
-- Arrays with one item
-- Arrays exceeding max items
-
-Return ONLY a valid JSON array. No explanation, no markdown, no preamble, no code fences. Each test case object must have exactly these fields:
-{
-  "id": "TC-001",
-  "endpoint": "POST /users",
-  "method": "POST",
-  "scenario": "Clear description of what is being tested",
-  "category": "positive|negative|edge|validation|boundary",
-  "priority": "high|medium|low",
-  "inputData": {
-    "headers": {},
-    "pathParams": {},
-    "queryParams": {},
-    "body": {}
-  },
-  "expectedOutput": {
-    "statusCode": 201,
-    "bodyContains": {},
-    "bodyExcludes": [],
-    "headers": {}
-  },
-  "preconditions": "Any setup needed before running this test",
-  "notes": "Additional context or edge case explanation",
-  "status": "Pending"
-}`;
+Cover these categories:
+- positive: happy path with valid data
+- negative: missing required fields, invalid types, unauthorized, not found
+- edge: empty strings, null values, special characters, SQL injection, XSS
+- validation: format violations, min/max violations
+- boundary: at limits, beyond limits`;
 
 export interface BuildPromptResult {
   systemPrompt: string;
@@ -190,8 +147,12 @@ export function buildPrompt(
   }
 
   parts.push(
-    `\nGenerate at least 10 test cases for this endpoint. For endpoints with many fields or complex business logic, generate 15-25 test cases. Cover ALL categories: positive, negative, edge, validation, and boundary.`
+    `\nGenerate at least 8 test cases for this endpoint. Cover positive, negative, edge, validation, and boundary categories.`
   );
+  parts.push(
+    `\nIMPORTANT: Return ONLY valid JSON. The response must be a JSON object: {"testCases": [...]}`
+  );
+  parts.push(`Do NOT include any text, explanation, or markdown. ONLY JSON.`);
 
   return {
     systemPrompt: SYSTEM_PROMPT,
@@ -227,7 +188,8 @@ export function buildBatchPrompt(
     parts.push(`\n## Business Rules & Context\n${businessContext}`);
   }
 
-  parts.push(`\nGenerate at least 5 test cases per endpoint. Return ALL test cases in a single JSON array.`);
+  parts.push(`\nGenerate at least 5 test cases per endpoint. Return ONLY valid JSON: {"testCases": [...]}`);
+  parts.push(`Do NOT include any text, explanation, or markdown. ONLY JSON.`);
 
   return {
     systemPrompt: SYSTEM_PROMPT,

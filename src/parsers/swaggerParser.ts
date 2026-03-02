@@ -41,7 +41,7 @@ export function flattenSchema(
   if (!schema) return [];
   const props: SchemaProperty[] = [];
 
-  if (schema.type === 'object' && schema.properties) {
+  if ((schema.type === 'object' || (!schema.type && schema.properties)) && schema.properties) {
     const req = schema.required ?? requiredFields;
     for (const [name, prop] of Object.entries(schema.properties)) {
       const fullName = prefix ? `${prefix}.${name}` : name;

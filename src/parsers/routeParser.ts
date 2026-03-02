@@ -8,8 +8,6 @@ import * as logger from '../utils/logger';
 import { scanDirectory, readFileContent } from '../utils/fileUtils';
 import type { RouteInfo } from '../types';
 
-const ROUTER_INIT_PATTERN =
-  /(?:const|let|var)\s+(\w+)\s*=\s*(?:express\.Router\(\)|require\(['"`]express['"`]\)\.Router\(\))/gi;
 const MIDDLEWARE_PATTERNS: Record<string, RegExp> = {
   expressValidator: /(?:body|param|query|header|check)\s*\(\s*['"`]([^'"`]+)['"`]\)/g,
   joi: /(?:Joi|joi)\.\w+/g,
@@ -17,27 +15,36 @@ const MIDDLEWARE_PATTERNS: Record<string, RegExp> = {
   zod: /(?:z\.\w+|\.parse\(|\.safeParse\()/g,
 };
 
+function findRouterNames(content: string): string[] {
+  const names = new Set<string>();
+  const pattern =
+    /(?:const|let|var)\s+(\w+)\s*=\s*(?:express\.Router\(\)|require\(['"`]express['"`]\)\.Router\(\)|new\s+(?:express\.)?Router\(\))/gi;
+  let m: RegExpExecArray | null;
+  while ((m = pattern.exec(content)) !== null) {
+    names.add(m[1]);
+  }
+  if (names.size === 0) names.add('router');
+  return Array.from(names);
+}
+
 export async function parseRouteFile(filePath: string): Promise<RouteInfo[]> {
   const routes: RouteInfo[] = [];
   try {
     const content = await readFileContent(filePath);
     const filename = path.basename(filePath);
 
-    let routerName = 'router';
-    const routerMatch = ROUTER_INIT_PATTERN.exec(content);
-    if (routerMatch) {
-      routerName = routerMatch[1];
-    }
-    ROUTER_INIT_PATTERN.lastIndex = 0;
+    const routerNames = findRouterNames(content);
 
-    let basePath = '';
-    const useRegex = new RegExp(
-      `(?:app)\\.use\\s*\\(\\s*['"\`]([^'"\`]+)['"\`]\\s*,\\s*${routerName}`,
-      'gi'
-    );
-    let useMatch: RegExpExecArray | null;
-    while ((useMatch = useRegex.exec(content)) !== null) {
-      basePath = useMatch[1];
+    const basePathMap: Record<string, string> = {};
+    for (const rName of routerNames) {
+      const useRegex = new RegExp(
+        `(?:app|module\\.exports)\\.use\\s*\\(\\s*['"\`]([^'"\`]+)['"\`]\\s*,\\s*${rName}`,
+        'gi'
+      );
+      let useMatch: RegExpExecArray | null;
+      while ((useMatch = useRegex.exec(content)) !== null) {
+        basePathMap[rName] = useMatch[1];
+      }
     }
 
     const validationHints: string[] = [];
@@ -48,8 +55,10 @@ export async function parseRouteFile(filePath: string): Promise<RouteInfo[]> {
       pattern.lastIndex = 0;
     }
 
+    const routerNameAlts = [...new Set([...routerNames, 'router', 'app'])].join('|');
+
     const routeRegex = new RegExp(
-      `(?:${routerName}|router|app)\\.(get|post|put|delete|patch)\\s*\\(\\s*['"\`]([^'"\`]+)['"\`]\\s*,\\s*([^)]+)\\)`,
+      `(?:${routerNameAlts})\\.(get|post|put|delete|patch|options|head|all)\\s*\\(\\s*['"\`]([^'"\`]+)['"\`]\\s*,\\s*([\\s\\S]*?)\\)\\s*;?\\s*(?:\\n|$)`,
       'gi'
     );
 
@@ -57,12 +66,18 @@ export async function parseRouteFile(filePath: string): Promise<RouteInfo[]> {
     while ((match = routeRegex.exec(content)) !== null) {
       const method = match[1].toUpperCase();
       const routePath = match[2];
-      const handlersRaw = match[3].trim();
+      let handlersRaw = match[3].trim();
+
+      handlersRaw = handlersRaw
+        .replace(/^\[/, '')
+        .replace(/\]\s*,?\s*$/, '');
 
       const handlers = handlersRaw
         .split(',')
-        .map(h => h.trim())
-        .filter(h => h && !h.startsWith('//'));
+        .map(h => h.trim().replace(/[\[\]]/g, ''))
+        .filter(h => h && !h.startsWith('//') && !h.startsWith('/*'));
+
+      if (handlers.length === 0) continue;
 
       const middlewares = handlers.slice(0, -1);
       const controllerRef = handlers[handlers.length - 1] ?? '';
@@ -72,6 +87,8 @@ export async function parseRouteFile(filePath: string): Promise<RouteInfo[]> {
         controllerFunction = controllerRef.split('.').pop() ?? controllerRef;
       }
 
+      const matchedRouter = routerNames.find(rn => match![0].startsWith(rn + '.'));
+      const basePath = (matchedRouter && basePathMap[matchedRouter]) || basePathMap[routerNames[0]] || '';
       const fullPath = basePath + routePath;
 
       routes.push({

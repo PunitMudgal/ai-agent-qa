@@ -33,36 +33,126 @@ function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function repairJson(text: string): string {
+  let s = text;
+
+  s = s.replace(/,\s*([}\]])/g, '$1');
+
+  s = s.replace(/([{,]\s*)(\w+)\s*:/g, '$1"$2":');
+
+  s = s.replace(/:\s*'([^']*)'/g, ': "$1"');
+
+  s = s.replace(/,\s*$/gm, ',');
+
+  return s;
+}
+
+function findMatchingBracket(text: string, openIdx: number): number {
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = openIdx; i < text.length; i++) {
+    const ch = text[i];
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (ch === '\\' && inString) {
+      escape = true;
+      continue;
+    }
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+    if (ch === '[') depth++;
+    if (ch === ']') {
+      depth--;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+}
+
+function tryParseWithRepair(text: string): unknown[] | null {
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    return Array.isArray(parsed) ? parsed : [parsed];
+  } catch {
+    // try repair
+  }
+
+  const repaired = repairJson(text);
+  try {
+    const parsed = JSON.parse(repaired) as unknown;
+    return Array.isArray(parsed) ? parsed : [parsed];
+  } catch {
+    // try further fixups
+  }
+
+  const trimmedForClose = repaired.replace(/,\s*$/, '');
+  for (const suffix of ['', '}]', ']', '"}]', '"}}]']) {
+    try {
+      const parsed = JSON.parse(trimmedForClose + suffix) as unknown;
+      return Array.isArray(parsed) ? parsed : [parsed];
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
+}
+
 export function extractJsonArray(text: string): unknown[] {
   let cleaned = text
     .replace(/```json\s*/gi, '')
     .replace(/```\s*/g, '')
+    .replace(/^[^[{]*(?=[\[{])/s, '')
     .trim();
 
-  try {
-    const parsed = JSON.parse(cleaned) as unknown;
-    return Array.isArray(parsed) ? parsed : [parsed];
-  } catch {
-    const arrayMatch = cleaned.match(/\[[\s\S]*\]/);
-    if (arrayMatch) {
-      try {
-        return JSON.parse(arrayMatch[0]) as unknown[];
-      } catch {
-        logger.warn('Found JSON array pattern but failed to parse it');
-      }
+  const directResult = tryParseWithRepair(cleaned);
+  if (directResult) {
+    if (directResult.length === 1 && typeof directResult[0] === 'object' && directResult[0] !== null) {
+      const obj = directResult[0] as Record<string, unknown>;
+      if (Array.isArray(obj.testCases)) return obj.testCases;
+      if (Array.isArray(obj.test_cases)) return obj.test_cases;
+      if (Array.isArray(obj.tests)) return obj.tests;
+      if (Array.isArray(obj.data)) return obj.data;
+      if (Array.isArray(obj.results)) return obj.results;
     }
-
-    const objMatch = cleaned.match(/\{[\s\S]*\}/);
-    if (objMatch) {
-      try {
-        return [JSON.parse(objMatch[0]) as object];
-      } catch {
-        // ignore
-      }
-    }
-
-    throw new Error('Could not extract valid JSON from AI response');
+    return directResult;
   }
+
+  const firstBracket = cleaned.indexOf('[');
+  if (firstBracket !== -1) {
+    const closingBracket = findMatchingBracket(cleaned, firstBracket);
+    if (closingBracket !== -1) {
+      const candidate = cleaned.substring(firstBracket, closingBracket + 1);
+      const result = tryParseWithRepair(candidate);
+      if (result) return result;
+    }
+
+    const fromBracket = cleaned.substring(firstBracket);
+    const result = tryParseWithRepair(fromBracket);
+    if (result) return result;
+
+    logger.warn('Found JSON array pattern but failed to parse it');
+  }
+
+  const firstBrace = cleaned.indexOf('{');
+  if (firstBrace !== -1) {
+    const fromBrace = cleaned.substring(firstBrace);
+    const objMatch = fromBrace.match(/\{[\s\S]*?\}(?=\s*$|\s*,|\s*\])/);
+    if (objMatch) {
+      const result = tryParseWithRepair(objMatch[0]);
+      if (result) return result;
+    }
+    const result = tryParseWithRepair(fromBrace);
+    if (result) return result;
+  }
+
+  throw new Error('Could not extract valid JSON from AI response');
 }
 
 export interface GenerateTestCasesOptions {
@@ -90,7 +180,7 @@ export async function generateTestCases(
 ): Promise<unknown[]> {
   const client = getClient();
   const model = options.model ?? process.env.GROQ_MODEL ?? 'llama-3.3-70b-versatile';
-  const maxTokens = options.maxTokens ?? 4000;
+  const maxTokens = options.maxTokens ?? 8000;
   const temperature = options.temperature ?? 0.3;
   const maxRetries = options.retries ?? 3;
 
@@ -106,11 +196,13 @@ export async function generateTestCases(
       logger.debug(`Groq API call attempt ${attempt}/${maxRetries} | model: ${model}`);
 
       const startTime = Date.now();
+
       const completion = await client.chat.completions.create({
         model,
         messages,
         max_tokens: maxTokens,
         temperature,
+        response_format: { type: 'json_object' },
       });
 
       const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
@@ -120,6 +212,8 @@ export async function generateTestCases(
       if (!responseText) {
         throw new Error('Empty response from Groq API');
       }
+
+      logger.debug(`Response length: ${responseText.length} chars`);
 
       const testCases = extractJsonArray(responseText);
       logger.debug(`Parsed ${testCases.length} test cases from response`);
@@ -156,6 +250,22 @@ export async function generateTestCases(
             'Invalid Groq API key. Please check your GROQ_API_KEY in .env file.\n' +
               'Get a free key at: https://console.groq.com'
           );
+        }
+
+        if (message.includes('response_format') || message.includes('json_object')) {
+          logger.debug('Model does not support response_format, retrying without it');
+          const fallbackCompletion = await client.chat.completions.create({
+            model,
+            messages,
+            max_tokens: maxTokens,
+            temperature,
+          });
+          const fallbackText = fallbackCompletion.choices[0]?.message?.content;
+          if (fallbackText) {
+            const testCases = extractJsonArray(fallbackText);
+            logger.debug(`Parsed ${testCases.length} test cases from fallback response`);
+            return testCases;
+          }
         }
 
         if (
