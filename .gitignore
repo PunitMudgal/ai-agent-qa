@@ -3,4 +3,5 @@ dist/
 .env
 output/*.json
 output/*.md
+output/jest/
 !output/.gitkeep

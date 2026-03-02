@@ -34,6 +34,9 @@ interface GlobalOpts {
   context?: string;
   filterTags?: string;
   filterPaths?: string;
+  jest?: boolean;
+  jestDir?: string;
+  baseUrl?: string;
 }
 
 function addGlobalOptions(cmd: Command): Command {
@@ -46,7 +49,10 @@ function addGlobalOptions(cmd: Command): Command {
     .option('--min-tests <number>', 'Minimum tests per endpoint', (v: string) => parseInt(v, 10), 10)
     .option('--context <string>', 'Business requirements description')
     .option('--filter-tags <tags>', 'Comma-separated swagger tags to include')
-    .option('--filter-paths <paths>', 'Comma-separated paths to include');
+    .option('--filter-paths <paths>', 'Comma-separated paths to include')
+    .option('--jest', 'Also generate Jest + Supertest test files', false)
+    .option('--jest-dir <path>', 'Directory for Jest test files (default: <output>/jest)')
+    .option('--base-url <url>', 'Base URL for API under test (default: http://localhost:3000)', 'http://localhost:3000');
 }
 
 interface NormalizedOptions extends GenerationOptions {
@@ -60,14 +66,18 @@ function normalizeOptions(opts: GlobalOpts): NormalizedOptions {
     noColor: opts.color === false,
   });
 
+  const outputDir = opts.output ?? './output';
   return {
     format: (opts.format ?? 'json') as 'json' | 'markdown' | 'both',
-    outputDir: opts.output ?? './output',
+    outputDir,
     businessContext: opts.context ?? '',
     filterTags: opts.filterTags ? opts.filterTags.split(',').map(t => t.trim()) : [],
     filterPaths: opts.filterPaths ? opts.filterPaths.split(',').map(p => p.trim()) : [],
     minTestsPerEndpoint: opts.minTests ?? 10,
     verbose: opts.verbose ?? false,
+    outputJest: opts.jest ?? false,
+    jestOutputDir: opts.jestDir ?? path.join(outputDir, 'jest'),
+    jestBaseUrl: opts.baseUrl ?? 'http://localhost:3000',
   };
 }
 
@@ -100,8 +110,16 @@ function printSummary(
 
   if (savedFiles.length > 0) {
     logger.header('📁 Output Files');
-    for (const f of savedFiles) {
+    const jestFiles = savedFiles.filter(f => f.endsWith('.test.ts'));
+    const otherFiles = savedFiles.filter(f => !f.endsWith('.test.ts'));
+    for (const f of otherFiles) {
       logger.success(path.resolve(f));
+    }
+    if (jestFiles.length > 0) {
+      logger.info(`Jest tests (${jestFiles.length} file(s)):`);
+      for (const f of jestFiles) {
+        logger.success(path.resolve(f));
+      }
     }
   }
 }

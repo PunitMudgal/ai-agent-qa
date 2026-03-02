@@ -102,6 +102,9 @@ app.post('/generate', async (req: Request, res: Response) => {
       filterTags = [],
       filterPaths = [],
       minTests = 10,
+      outputJest = false,
+      jestDir,
+      jestBaseUrl = 'http://localhost:3000',
     } = body;
 
     if (!swaggerContent && !routesPath) {
@@ -139,6 +142,9 @@ app.post('/generate', async (req: Request, res: Response) => {
       filterTags: filterTagsArr,
       filterPaths: filterPathsArr,
       minTestsPerEndpoint: parseInt(String(minTests), 10) || 10,
+      outputJest: !!outputJest,
+      jestOutputDir: jestDir ? path.resolve(String(jestDir).trim()) : path.join(outputDir, 'jest'),
+      jestBaseUrl: String(jestBaseUrl || 'http://localhost:3000').trim(),
     };
 
     let testCases: import('./types').TestCase[];
@@ -194,7 +200,7 @@ app.post('/generate', async (req: Request, res: Response) => {
       testCases: jsonOutput.testCases,
       metadata: jsonOutput.metadata,
       markdown: mdOutput,
-      savedFiles: savedFiles.map(f => path.basename(f)),
+      savedFiles: savedFiles.map(f => path.relative(outputDir, path.resolve(f))),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -203,9 +209,10 @@ app.post('/generate', async (req: Request, res: Response) => {
   }
 });
 
-app.get('/download/:filename', (req: Request, res: Response) => {
-  const filePath = path.join(outputDir, req.params.filename);
-  if (!fs.existsSync(filePath)) {
+app.get('/download/:filename(.+)', (req: Request, res: Response) => {
+  const filename = req.params.filename;
+  const filePath = path.join(outputDir, filename);
+  if (!path.resolve(filePath).startsWith(path.resolve(outputDir)) || !fs.existsSync(filePath)) {
     return res.status(404).json({ error: 'File not found' });
   }
   res.download(filePath);

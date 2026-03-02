@@ -11,7 +11,8 @@ import { buildPrompt } from '../ai/promptBuilder';
 import { generateTestCases, initGroqClient } from '../ai/groqClient';
 import { formatTestCases as formatJson, saveToFile as saveJson } from '../formatters/jsonFormatter';
 import { formatTestCases as formatMd, saveToFile as saveMd } from '../formatters/markdownFormatter';
-import { ensureOutputDir, generateBatchFilename } from '../utils/fileUtils';
+import { formatTestCasesAsJestByEndpoint } from '../formatters/jestSupertestFormatter';
+import { ensureOutputDir, generateBatchFilename, writeFile } from '../utils/fileUtils';
 import * as logger from '../utils/logger';
 
 function sleep(ms: number): Promise<void> {
@@ -116,6 +117,21 @@ async function saveOutput(
     await saveMd(formatted, filePath);
     savedFiles.push(filePath);
     logger.success(`Markdown saved: ${filePath}`);
+  }
+
+  if (options.outputJest && testCases.length > 0) {
+    const jestOutputDir = path.resolve(
+      options.jestOutputDir || path.join(outputDir, 'jest')
+    );
+    await ensureOutputDir(jestOutputDir);
+    const baseUrl = options.jestBaseUrl ?? 'http://localhost:3000';
+    const files = formatTestCasesAsJestByEndpoint(testCases, { baseUrl });
+    for (const { filename, content } of files) {
+      const filePath = path.join(jestOutputDir, filename);
+      await writeFile(filePath, content);
+      savedFiles.push(filePath);
+      logger.success(`Jest test saved: ${filePath}`);
+    }
   }
 
   return savedFiles;

@@ -138,6 +138,12 @@ export interface GenerationOptions {
   filterPaths: string[];
   minTestsPerEndpoint: number;
   includeCategories?: string[];
+  /** Generate Jest + Supertest test files */
+  outputJest?: boolean;
+  /** Directory for .test.ts files (default: outputDir + '/jest') */
+  jestOutputDir?: string;
+  /** Base URL for API under test (default: http://localhost:3000) */
+  jestBaseUrl?: string;
 }
 
 /** Options for generateFromMixed (includes optional swagger/routes/controllers paths) */
@@ -175,4 +181,7 @@ export interface GenerateRequestBody {
   filterTags?: string[] | string;
   filterPaths?: string[] | string;
   minTests?: number;
+  outputJest?: boolean;
+  jestDir?: string;
+  jestBaseUrl?: string;
 }

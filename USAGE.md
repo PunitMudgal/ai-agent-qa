@@ -158,3 +158,48 @@ node src/cli.js interactive
 | Auto-detect in project  | N/A (CLI only)                                                    | `node src/cli.js scan --project /Users/punit/projects/QLS-Backend` |
 
 Output is written to `./output` (or the directory you set via **Output directory** in the UI or `--output` in the CLI).
+
+---
+
+## Generating Jest + Supertest test code
+
+You can generate **runnable Jest + Supertest** test files from the same test cases. Each endpoint gets one `.test.ts` file (e.g. `post-subscription-reminder.test.ts`) with one `describe` and multiple `it` blocks. Tests call your API via a configurable base URL and assert status codes and response body.
+
+### CLI
+
+Add `--jest` to any generation command. Optionally set the directory for test files and the API base URL:
+
+```bash
+node dist/cli.js routes --routes /path/to/routes --output ./output --jest
+node dist/cli.js swagger --input swagger.json --output ./output --jest --jest-dir ./output/jest --base-url http://localhost:3000
+```
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--jest` | Also generate Jest + Supertest `.test.ts` files | off |
+| `--jest-dir <path>` | Directory for test files | `<output>/jest` |
+| `--base-url <url>` | Base URL for the API under test | `http://localhost:3000` |
+
+Generated tests use `process.env.API_BASE_URL || 'http://localhost:3000'`, so you can override at runtime without changing the file.
+
+### Web UI
+
+1. Open **Advanced options**.
+2. Check **Generate Jest + Supertest test code**.
+3. Optionally set **Base URL for API** (e.g. `http://localhost:3000`).
+4. Generate as usual. In the results, use the **Download Jest: &lt;filename&gt;** links to save each `.test.ts` file.
+
+### Running the generated tests
+
+The generator does **not** install or run Jest. In the project where you will run the tests:
+
+1. Install dependencies:
+   ```bash
+   npm install --save-dev jest supertest @types/supertest @types/jest
+   ```
+2. Copy the generated `.test.ts` files (e.g. from `./output/jest/`) into your test folder.
+3. Start your API (e.g. on port 3000), then run:
+   ```bash
+   npx jest path/to/generated.test.ts
+   ```
+   Or set `API_BASE_URL` to point at your running API and run your full test suite.

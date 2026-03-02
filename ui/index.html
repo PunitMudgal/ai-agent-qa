@@ -507,6 +507,7 @@
     /* ── Download Buttons ── */
     .download-bar {
       display: flex;
+      flex-wrap: wrap;
       gap: 10px;
       margin-top: 16px;
     }
@@ -707,6 +708,17 @@
               <label for="filterPaths">Filter by Paths (comma-separated)</label>
               <input type="text" id="filterPaths" placeholder="e.g., /users, /auth">
             </div>
+            <div class="form-group">
+              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                <input type="checkbox" id="outputJest" style="width: auto;">
+                Generate Jest + Supertest test code
+              </label>
+            </div>
+            <div class="form-group" id="jestBaseUrlGroup">
+              <label for="jestBaseUrl">Base URL for API (Jest tests)</label>
+              <input type="text" id="jestBaseUrl" placeholder="http://localhost:3000"
+                style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font-size: 13px;">
+            </div>
           </div>
         </div>
       </div>
@@ -888,6 +900,8 @@
       const minTests = parseInt(document.getElementById('minTests').value) || 10;
       const filterTags = document.getElementById('filterTags').value.trim();
       const filterPaths = document.getElementById('filterPaths').value.trim();
+      const outputJest = document.getElementById('outputJest').checked;
+      const jestBaseUrl = document.getElementById('jestBaseUrl').value.trim() || 'http://localhost:3000';
 
       const btn = document.getElementById('generateBtn');
       btn.disabled = true;
@@ -922,6 +936,8 @@
             filterTags: filterTags ? filterTags.split(',').map(t => t.trim()) : [],
             filterPaths: filterPaths ? filterPaths.split(',').map(p => p.trim()) : [],
             minTests,
+            outputJest: outputJest,
+            jestBaseUrl: outputJest ? jestBaseUrl : undefined,
           }),
         });
 
@@ -988,8 +1004,13 @@
       dlBar.innerHTML = '';
       if (savedFiles.length > 0) {
         savedFiles.forEach(f => {
-          const ext = f.endsWith('.md') ? 'Markdown' : 'JSON';
-          dlBar.innerHTML += `<a class="btn-download" href="/download/${encodeURIComponent(f)}" download>⬇ Download ${ext}</a>`;
+          const name = f.split('/').pop() || f;
+          let label = 'Download ';
+          if (f.endsWith('.md')) label += 'Markdown';
+          else if (f.endsWith('.json')) label += 'JSON';
+          else if (f.endsWith('.test.ts') || f.includes('jest')) label += 'Jest: ' + name;
+          else label += name;
+          dlBar.innerHTML += `<a class="btn-download" href="/download/${encodeURIComponent(f)}" download>⬇ ${label}</a>`;
         });
       }
       // Always add copy buttons

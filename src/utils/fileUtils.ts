@@ -12,15 +12,25 @@ export async function ensureOutputDir(dirPath: string): Promise<void> {
   await fs.ensureDir(dirPath);
 }
 
+/** Build a filesystem-safe slug from method + path (e.g. "POST /users" -> "post-users") */
+export function endpointToSlug(endpoint: string): string {
+  return endpoint
+    .toLowerCase()
+    .replace(/^(get|post|put|delete|patch|options|head)\s*/i, (m) => m.trim().toLowerCase() + '-')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'api';
+}
+
 export function generateOutputFilename(endpoint: string, format: string): string {
   const date = new Date().toISOString().split('T')[0];
-  const slug = endpoint
-    .toLowerCase()
-    .replace(/^(get|post|put|delete|patch)\s*/i, (m) => m.trim().toLowerCase() + '-')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
+  const slug = endpointToSlug(endpoint);
   const ext = format === 'markdown' ? 'md' : format;
   return `${date}_${slug}_testcases.${ext}`;
+}
+
+/** Filename for a Jest test file for one endpoint (e.g. "post-subscription-reminder.test.ts") */
+export function generateJestTestFilename(endpoint: string): string {
+  return `${endpointToSlug(endpoint)}.test.ts`;
 }
 
 export function generateBatchFilename(format: string): string {
