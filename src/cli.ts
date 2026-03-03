@@ -37,6 +37,8 @@ interface GlobalOpts {
   jest?: boolean;
   jestDir?: string;
   baseUrl?: string;
+  basePath?: string;
+  strictAssertions?: boolean;
 }
 
 function addGlobalOptions(cmd: Command): Command {
@@ -52,7 +54,9 @@ function addGlobalOptions(cmd: Command): Command {
     .option('--filter-paths <paths>', 'Comma-separated paths to include')
     .option('--jest', 'Also generate Jest + Supertest test files', false)
     .option('--jest-dir <path>', 'Directory for Jest test files (default: <output>/jest)')
-    .option('--base-url <url>', 'Base URL for API under test (default: http://localhost:3000)', 'http://localhost:3000');
+    .option('--base-url <url>', 'Base URL for API under test (default: http://localhost:3000)', 'http://localhost:3000')
+    .option('--base-path <path>', 'Base path for routes (e.g. /api/v1 when app mounts under that)')
+    .option('--strict-assertions', 'Use strict body assertions in Jest tests (default: status-only)', false);
 }
 
 interface NormalizedOptions extends GenerationOptions {
@@ -78,6 +82,8 @@ function normalizeOptions(opts: GlobalOpts): NormalizedOptions {
     outputJest: opts.jest ?? false,
     jestOutputDir: opts.jestDir ?? path.join(outputDir, 'jest'),
     jestBaseUrl: opts.baseUrl ?? 'http://localhost:3000',
+    jestBasePath: opts.basePath?.trim() || undefined,
+    jestExploratoryAssertions: opts.strictAssertions ? false : true,
   };
 }
 

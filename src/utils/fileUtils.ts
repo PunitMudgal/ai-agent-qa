@@ -3,6 +3,7 @@
  * @description File system utilities for reading, writing, scanning, and path generation.
  */
 
+import { parse as acornParse } from 'acorn';
 import fs from 'fs-extra';
 import path from 'path';
 import yaml from 'js-yaml';
@@ -70,6 +71,23 @@ export async function readFileContent(filePath: string): Promise<string> {
 export async function writeFile(filePath: string, content: string): Promise<void> {
   await fs.ensureDir(path.dirname(filePath));
   await fs.writeFile(filePath, content, 'utf-8');
+}
+
+/**
+ * Validate generated Jest test file for syntax errors, then write.
+ * Returns true if valid and written, false if invalid (file not written).
+ */
+export async function validateAndWriteJestFile(
+  filePath: string,
+  content: string
+): Promise<boolean> {
+  try {
+    acornParse(content, { ecmaVersion: 'latest', sourceType: 'script' });
+  } catch {
+    return false;
+  }
+  await writeFile(filePath, content);
+  return true;
 }
 
 export async function listFiles(dir: string): Promise<string[]> {

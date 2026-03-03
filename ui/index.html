@@ -719,6 +719,17 @@
               <input type="text" id="jestBaseUrl" placeholder="http://localhost:3000"
                 style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font-size: 13px;">
             </div>
+            <div class="form-group" id="jestBasePathGroup">
+              <label for="jestBasePath">Base path for routes (e.g. /api/v1)</label>
+              <input type="text" id="jestBasePath" placeholder="/api/v1"
+                style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font-size: 13px;">
+            </div>
+            <div class="form-group" id="jestStrictAssertionsGroup">
+              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                <input type="checkbox" id="jestStrictAssertions" style="width: auto;">
+                Strict body assertions (default: status-only to avoid false failures)
+              </label>
+            </div>
           </div>
         </div>
       </div>
@@ -902,6 +913,8 @@
       const filterPaths = document.getElementById('filterPaths').value.trim();
       const outputJest = document.getElementById('outputJest').checked;
       const jestBaseUrl = document.getElementById('jestBaseUrl').value.trim() || 'http://localhost:3000';
+      const jestBasePath = document.getElementById('jestBasePath').value.trim();
+      const jestStrictAssertions = document.getElementById('jestStrictAssertions').checked;
 
       const btn = document.getElementById('generateBtn');
       btn.disabled = true;
@@ -938,6 +951,8 @@
             minTests,
             outputJest: outputJest,
             jestBaseUrl: outputJest ? jestBaseUrl : undefined,
+            jestBasePath: outputJest && jestBasePath ? jestBasePath : undefined,
+            jestExploratoryAssertions: outputJest && !jestStrictAssertions,
           }),
         });
 

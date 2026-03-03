@@ -12,7 +12,7 @@ import { generateTestCases, initGroqClient } from '../ai/groqClient';
 import { formatTestCases as formatJson, saveToFile as saveJson } from '../formatters/jsonFormatter';
 import { formatTestCases as formatMd, saveToFile as saveMd } from '../formatters/markdownFormatter';
 import { formatTestCasesAsJestByEndpoint } from '../formatters/jestSupertestFormatter';
-import { ensureOutputDir, generateBatchFilename, writeFile } from '../utils/fileUtils';
+import { ensureOutputDir, generateBatchFilename, writeFile, validateAndWriteJestFile } from '../utils/fileUtils';
 import * as logger from '../utils/logger';
 
 function sleep(ms: number): Promise<void> {
@@ -125,12 +125,21 @@ async function saveOutput(
     );
     await ensureOutputDir(jestOutputDir);
     const baseUrl = options.jestBaseUrl ?? 'http://localhost:3000';
-    const files = formatTestCasesAsJestByEndpoint(testCases, { baseUrl });
+    const jestOpts = {
+      baseUrl,
+      basePath: options.jestBasePath,
+      exploratoryAssertions: options.jestExploratoryAssertions ?? true,
+    };
+    const files = formatTestCasesAsJestByEndpoint(testCases, jestOpts);
     for (const { filename, content } of files) {
       const filePath = path.join(jestOutputDir, filename);
-      await writeFile(filePath, content);
-      savedFiles.push(filePath);
-      logger.success(`Jest test saved: ${filePath}`);
+      const ok = await validateAndWriteJestFile(filePath, content);
+      if (ok) {
+        savedFiles.push(filePath);
+        logger.success(`Jest test saved: ${filePath}`);
+      } else {
+        logger.warn(`Skipped invalid Jest file: ${filePath}`);
+      }
     }
   }
 

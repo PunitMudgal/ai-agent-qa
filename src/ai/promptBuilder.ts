@@ -29,7 +29,13 @@ Cover these categories:
 - negative: missing required fields, invalid types, unauthorized, not found
 - edge: empty strings, null values, special characters, SQL injection, XSS
 - validation: format violations, min/max violations
-- boundary: at limits, beyond limits`;
+- boundary: at limits, beyond limits
+
+CRITICAL RULES:
+- Use EXACT field names from the API spec/controller (e.g. if signIn expects "email", use "email", not "username")
+- Do NOT invent error response shapes. Only assert error shapes that are explicitly documented in the spec
+- Use simple, safe values for path/query/body (avoid code-like strings, unescaped quotes, or very long strings)
+- For unauthorized/403: expect statusCode only unless the spec defines an exact error body`;
 
 export interface BuildPromptResult {
   systemPrompt: string;

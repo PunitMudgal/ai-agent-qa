@@ -172,6 +172,8 @@ Add `--jest` to any generation command. Optionally set the directory for test fi
 ```bash
 node dist/cli.js routes --routes /path/to/routes --output ./output --jest
 node dist/cli.js swagger --input swagger.json --output ./output --jest --jest-dir ./output/jest --base-url http://localhost:3000
+# If your app mounts routes under /api/v1 (e.g. app.use('/api/v1', router)):
+node dist/cli.js routes --routes /path/to/routes --output ./output --jest --base-path /api/v1
 ```
 
 | Option | Description | Default |
@@ -179,6 +181,8 @@ node dist/cli.js swagger --input swagger.json --output ./output --jest --jest-di
 | `--jest` | Also generate Jest + Supertest `.test.ts` files | off |
 | `--jest-dir <path>` | Directory for test files | `<output>/jest` |
 | `--base-url <url>` | Base URL for the API under test | `http://localhost:3000` |
+| `--base-path <path>` | Base path for routes (e.g. /api/v1 when app mounts under that) | (none) |
+| `--strict-assertions` | Use strict body assertions; default is status-only to avoid false failures | off |
 
 Generated tests use `process.env.API_BASE_URL || 'http://localhost:3000'`, so you can override at runtime without changing the file.
 
@@ -187,7 +191,9 @@ Generated tests use `process.env.API_BASE_URL || 'http://localhost:3000'`, so yo
 1. Open **Advanced options**.
 2. Check **Generate Jest + Supertest test code**.
 3. Optionally set **Base URL for API** (e.g. `http://localhost:3000`).
-4. Generate as usual. In the results, use the **Download Jest: &lt;filename&gt;** links to save each `.test.ts` file.
+4. If your app mounts routes under a prefix (e.g. `/api/v1`), set **Base path for routes**.
+5. By default, tests assert status codes only (exploratory mode) to avoid false failures from invented error shapes. Check **Strict body assertions** if you want full body matching.
+6. Generate as usual. In the results, use the **Download Jest: &lt;filename&gt;** links to save each `.test.ts` file.
 
 ### Running the generated tests
 

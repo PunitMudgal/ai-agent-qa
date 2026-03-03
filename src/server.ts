@@ -105,6 +105,8 @@ app.post('/generate', async (req: Request, res: Response) => {
       outputJest = false,
       jestDir,
       jestBaseUrl = 'http://localhost:3000',
+      jestBasePath,
+      jestExploratoryAssertions,
     } = body;
 
     if (!swaggerContent && !routesPath) {
@@ -145,6 +147,8 @@ app.post('/generate', async (req: Request, res: Response) => {
       outputJest: !!outputJest,
       jestOutputDir: jestDir ? path.resolve(String(jestDir).trim()) : path.join(outputDir, 'jest'),
       jestBaseUrl: String(jestBaseUrl || 'http://localhost:3000').trim(),
+      jestBasePath: jestBasePath ? String(jestBasePath).trim() : undefined,
+      jestExploratoryAssertions: jestExploratoryAssertions === false ? false : true,
     };
 
     let testCases: import('./types').TestCase[];

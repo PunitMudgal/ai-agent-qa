@@ -9,6 +9,10 @@ import { generateJestTestFilename } from '../utils/fileUtils';
 export interface JestFormatterOptions {
   baseUrl: string;
   useAppPath?: string;
+  /** Base path to prepend to all routes (e.g. /api/v1 when app mounts under that) */
+  basePath?: string;
+  /** If true, only assert status code (avoids failing on invented error shapes) */
+  exploratoryAssertions?: boolean;
 }
 
 /** Escape a string for use inside a JavaScript string literal (single-quoted) */
@@ -20,13 +24,23 @@ function escapeForJs(str: string): string {
     .replace(/\r/g, '\\r');
 }
 
+/** Sanitize a value for use as a path segment - never emit code-like or broken strings */
+function sanitizePathParam(value: unknown): string {
+  const s = String(value ?? '');
+  if (s.length > 200) return s.slice(0, 200);
+  if (/[\r\n'"\\`{}]/.test(s)) {
+    return s.replace(/[\r\n'"\\`{}]/g, '_');
+  }
+  return s;
+}
+
 /** Build the request path with path params substituted (e.g. /users/:id + { id: 123 } -> /users/123) */
 function buildPath(pathTemplate: string, pathParams: Record<string, unknown>): string {
   let path = pathTemplate;
   for (const [key, value] of Object.entries(pathParams || {})) {
     const placeholder = ':' + key;
     if (path.includes(placeholder)) {
-      path = path.replace(new RegExp(':' + key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), String(value));
+      path = path.replace(new RegExp(':' + key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), sanitizePathParam(value));
     }
   }
   return path;
@@ -41,10 +55,14 @@ function toSourceValue(value: unknown): string {
   return JSON.stringify(value);
 }
 
-function buildRequestLines(tc: TestCase, baseVar: string): string[] {
+function buildRequestLines(tc: TestCase, baseVar: string, options: JestFormatterOptions): string[] {
   const method = (tc.method ?? 'GET').toUpperCase();
   const endpoint = tc.endpoint ?? '';
-  const pathTemplate = endpoint.replace(/^(get|post|put|delete|patch|options|head)\s+/i, '').trim() || '/';
+  let pathTemplate = endpoint.replace(/^(get|post|put|delete|patch|options|head)\s+/i, '').trim() || '/';
+  const prefix = (options.basePath ?? '').trim().replace(/\/$/, '');
+  if (prefix) {
+    pathTemplate = (prefix + (pathTemplate.startsWith('/') ? pathTemplate : '/' + pathTemplate)).replace(/\/+/g, '/');
+  }
   const input: InputData = tc.inputData ?? {
     headers: {},
     pathParams: {},
@@ -59,7 +77,7 @@ function buildRequestLines(tc: TestCase, baseVar: string): string[] {
 
   const lines: string[] = [];
   lines.push(`    const res = await request(${baseVar})`);
-  lines.push(`      .${method.toLowerCase()}('${path.replace(/'/g, "\\'")}')`);
+  lines.push(`      .${method.toLowerCase()}(${JSON.stringify(path)})`);
 
   if (Object.keys(headers).length > 0) {
     lines.push(`      .set(${toSourceValue(headers)})`);
@@ -75,7 +93,7 @@ function buildRequestLines(tc: TestCase, baseVar: string): string[] {
   return lines;
 }
 
-function buildAssertions(tc: TestCase): string[] {
+function buildAssertions(tc: TestCase, exploratory: boolean): string[] {
   const expected: ExpectedOutput = tc.expectedOutput ?? {
     statusCode: 200,
     bodyContains: {},
@@ -88,22 +106,24 @@ function buildAssertions(tc: TestCase): string[] {
 
   const lines: string[] = [];
   lines.push(`    expect(res.status).toBe(${statusCode});`);
-  if (Object.keys(bodyContains).length > 0) {
+  if (!exploratory && Object.keys(bodyContains).length > 0) {
     lines.push(`    expect(res.body).toMatchObject(${toSourceValue(bodyContains)});`);
   }
-  for (const excl of bodyExcludes) {
-    if (typeof excl === 'string') {
-      lines.push(`    expect(JSON.stringify(res.body)).not.toContain(${JSON.stringify(excl)});`);
+  if (!exploratory) {
+    for (const excl of bodyExcludes) {
+      if (typeof excl === 'string') {
+        lines.push(`    expect(JSON.stringify(res.body)).not.toContain(${JSON.stringify(excl)});`);
+      }
     }
   }
   return lines;
 }
 
-function generateOneTest(tc: TestCase, baseVar: string): string {
+function generateOneTest(tc: TestCase, baseVar: string, options: JestFormatterOptions): string {
   const scenario = (tc.scenario ?? 'should respond').replace(/\s+/g, ' ').trim();
   const safeScenario = escapeForJs(scenario).slice(0, 120);
-  const requestLines = buildRequestLines(tc, baseVar);
-  const assertionLines = buildAssertions(tc);
+  const requestLines = buildRequestLines(tc, baseVar, options);
+  const assertionLines = buildAssertions(tc, options.exploratoryAssertions ?? true);
 
   const parts: string[] = [];
   parts.push(`  it('${safeScenario}', async () => {`);
@@ -124,7 +144,7 @@ function generateFileContent(
     ? `const request = require('supertest');\nconst app = require('${options.useAppPath.replace(/\\/g, '\\\\')}');\n`
     : `const request = require('supertest');\nconst baseUrl = process.env.API_BASE_URL || ${JSON.stringify(options.baseUrl)};\n`;
 
-  const tests = cases.map(tc => generateOneTest(tc, baseVar)).join('\n\n');
+  const tests = cases.map(tc => generateOneTest(tc, baseVar, options)).join('\n\n');
 
   return `/**
  * Generated by QA Test Generator. Run: npx jest path/to/this/file.
@@ -132,7 +152,7 @@ function generateFileContent(
  * Generated at: ${new Date().toISOString()}
  */
 ${header}
-describe('${endpointKey.replace(/'/g, "\\'")}', () => {
+describe(${JSON.stringify(endpointKey)}, () => {
 ${tests}
 });
 `;

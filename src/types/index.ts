@@ -144,6 +144,10 @@ export interface GenerationOptions {
   jestOutputDir?: string;
   /** Base URL for API under test (default: http://localhost:3000) */
   jestBaseUrl?: string;
+  /** Base path to prepend to all routes (e.g. /api/v1 when app mounts under that) */
+  jestBasePath?: string;
+  /** If false, use strict body assertions; if true (default), only assert status code */
+  jestExploratoryAssertions?: boolean;
 }
 
 /** Options for generateFromMixed (includes optional swagger/routes/controllers paths) */
@@ -184,4 +188,6 @@ export interface GenerateRequestBody {
   outputJest?: boolean;
   jestDir?: string;
   jestBaseUrl?: string;
+  jestBasePath?: string;
+  jestExploratoryAssertions?: boolean;
 }
