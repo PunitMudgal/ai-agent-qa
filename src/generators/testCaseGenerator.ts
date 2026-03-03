@@ -172,7 +172,12 @@ export async function generateFromSwagger(
     );
 
     try {
-      const { systemPrompt, userPrompt } = buildPrompt(ep, opts.businessContext);
+      const { systemPrompt, userPrompt } = buildPrompt(
+        ep,
+        opts.businessContext,
+        null,
+        opts.minTestsPerEndpoint ?? DEFAULT_OPTIONS.minTestsPerEndpoint
+      );
       const testCases = await generateTestCases(userPrompt, {
         systemPrompt,
       });
@@ -219,7 +224,12 @@ export async function generateFromSwaggerString(
     const label = `${ep.method} ${ep.path}`;
 
     try {
-      const { systemPrompt, userPrompt } = buildPrompt(ep, opts.businessContext);
+      const { systemPrompt, userPrompt } = buildPrompt(
+        ep,
+        opts.businessContext,
+        null,
+        opts.minTestsPerEndpoint ?? DEFAULT_OPTIONS.minTestsPerEndpoint
+      );
       const testCases = await generateTestCases(userPrompt, { systemPrompt });
 
       const withIds = assignIds(testCases, idCounter);
@@ -246,6 +256,12 @@ export async function generateFromRoutes(
 
   logger.info('Scanning route files...');
   const routes = await parseRouteDirectory(routesDir);
+  if (routes.length === 0) {
+    throw new Error(
+      `No routes found in "${routesDir}". Check that the path is correct and contains route files ` +
+      `(.js/.ts with "route", "router", "api", or "endpoint" in the filename, or any .js/.ts if none match).`
+    );
+  }
   logger.success(`Found ${routes.length} routes`);
 
   let controllerHints: ControllerHint[] = [];
@@ -293,7 +309,8 @@ export async function generateFromRoutes(
       const { systemPrompt, userPrompt } = buildPrompt(
         endpoint,
         opts.businessContext,
-        hint ?? null
+        hint ?? null,
+        opts.minTestsPerEndpoint ?? DEFAULT_OPTIONS.minTestsPerEndpoint
       );
       const testCases = await generateTestCases(userPrompt, { systemPrompt });
 
@@ -330,6 +347,12 @@ export async function generateFromMixed(
   if (opts.routes) {
     logger.info('Scanning route files...');
     const routes = await parseRouteDirectory(opts.routes);
+    if (routes.length === 0) {
+      throw new Error(
+        `No routes found in "${opts.routes}". Check that the path is correct and contains route files ` +
+        `(.js/.ts with "route", "router", "api", or "endpoint" in the filename, or any .js/.ts if none match).`
+      );
+    }
     logger.success(`Found ${routes.length} routes`);
 
     for (const route of routes) {
@@ -389,7 +412,8 @@ export async function generateFromMixed(
       const { systemPrompt, userPrompt } = buildPrompt(
         ep,
         opts.businessContext,
-        hint ?? null
+        hint ?? null,
+        opts.minTestsPerEndpoint ?? DEFAULT_OPTIONS.minTestsPerEndpoint
       );
       const testCases = await generateTestCases(userPrompt, { systemPrompt });
 

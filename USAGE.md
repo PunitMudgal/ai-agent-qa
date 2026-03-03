@@ -85,13 +85,13 @@ cd "/Users/punit/test-projects/test case generator/ai-agent-qa"
 ### 1. From Swagger file only
 
 ```bash
-node src/cli.js swagger --input /Users/punit/projects/QLS-Backend/swagger.json --output ./output
+node dist/cli.js swagger --input /Users/punit/projects/QLS-Backend/swagger.json --output ./output
 ```
 
 Or with a local sample:
 
 ```bash
-node src/cli.js swagger --input tests/sample.swagger.json --output ./output
+node dist/cli.js swagger --input tests/sample.swagger.json --output ./output
 ```
 
 Optional: `--format json|markdown|both`, `--min-tests 10`, `--context "your business rules"`, `--filter-tags users,auth`, `--filter-paths /api/users`.
@@ -99,13 +99,13 @@ Optional: `--format json|markdown|both`, `--min-tests 10`, `--context "your busi
 ### 2. From Routes directory only
 
 ```bash
-node src/cli.js routes --routes /Users/punit/projects/QLS-Backend/src/routes --output ./output
+node dist/cli.js routes --routes /Users/punit/projects/QLS-Backend/src/routes --output ./output
 ```
 
 With controllers (optional):
 
 ```bash
-node src/cli.js routes \
+node dist/cli.js routes \
   --routes /Users/punit/projects/QLS-Backend/src/routes \
   --controllers /Users/punit/projects/QLS-Backend/src/controllers \
   --output ./output
@@ -114,7 +114,7 @@ node src/cli.js routes \
 ### 3. From both Swagger and Routes (mixed)
 
 ```bash
-node src/cli.js generate \
+node dist/cli.js generate \
   --swagger /Users/punit/projects/QLS-Backend/swagger.json \
   --routes /Users/punit/projects/QLS-Backend/src/routes \
   --controllers /Users/punit/projects/QLS-Backend/src/controllers \
@@ -128,7 +128,7 @@ You can pass only `--swagger`, only `--routes`, or both. Same global options as 
 Point at your **backend** project root; the CLI will look for Swagger and route files and run mixed generation:
 
 ```bash
-node src/cli.js scan --project /Users/punit/projects/QLS-Backend --output ./output
+node dist/cli.js scan --project /Users/punit/projects/QLS-Backend --output ./output
 ```
 
 ### 5. Interactive mode
@@ -136,15 +136,15 @@ node src/cli.js scan --project /Users/punit/projects/QLS-Backend --output ./outp
 Prompts for Swagger path, routes dir, controllers dir, context, format, output dir:
 
 ```bash
-node src/cli.js interactive
+node dist/cli.js interactive
 ```
 
 ### 6. Other CLI commands
 
 - **Validate** generated test JSON:  
-  `node src/cli.js validate --input ./output/qa_test_cases_xxx.json`
+  `node dist/cli.js validate --input ./output/qa_test_cases_xxx.json`
 - **Stats** for a generated file:  
-  `node src/cli.js stats --input ./output/qa_test_cases_xxx.json`
+  `node dist/cli.js stats --input ./output/qa_test_cases_xxx.json`
 
 ---
 
@@ -152,10 +152,10 @@ node src/cli.js interactive
 
 | Goal                    | UI                                                                 | CLI |
 |-------------------------|--------------------------------------------------------------------|-----|
-| Swagger only            | Upload/paste Swagger; Generate                                     | `node src/cli.js swagger --input /Users/punit/projects/QLS-Backend/swagger.json` |
-| Routes only             | Set Routes path = `/Users/punit/projects/QLS-Backend/src/routes`; Generate | `node src/cli.js routes --routes /Users/punit/projects/QLS-Backend/src/routes` |
-| Swagger + Routes        | Upload/paste Swagger + set Routes path; Generate                   | `node src/cli.js generate --swagger /path/to/swagger.json --routes /Users/punit/projects/QLS-Backend/src/routes` |
-| Auto-detect in project  | N/A (CLI only)                                                    | `node src/cli.js scan --project /Users/punit/projects/QLS-Backend` |
+| Swagger only            | Upload/paste Swagger; Generate                                     | `node dist/cli.js swagger --input /Users/punit/projects/QLS-Backend/swagger.json` |
+| Routes only             | Set Routes path = `/Users/punit/projects/QLS-Backend/src/routes`; Generate | `node dist/cli.js routes --routes /Users/punit/projects/QLS-Backend/src/routes` |
+| Swagger + Routes        | Upload/paste Swagger + set Routes path; Generate                   | `node dist/cli.js generate --swagger /path/to/swagger.json --routes /Users/punit/projects/QLS-Backend/src/routes` |
+| Auto-detect in project  | N/A (CLI only)                                                    | `node dist/cli.js scan --project /Users/punit/projects/QLS-Backend` |
 
 Output is written to `./output` (or the directory you set via **Output directory** in the UI or `--output` in the CLI).
 

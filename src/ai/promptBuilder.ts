@@ -39,7 +39,8 @@ export interface BuildPromptResult {
 export function buildPrompt(
   endpoint: Endpoint,
   businessContext = '',
-  controllerHints: ControllerHint | null = null
+  controllerHints: ControllerHint | null = null,
+  minTestsPerEndpoint = 10
 ): BuildPromptResult {
   const parts: string[] = [];
 
@@ -147,7 +148,7 @@ export function buildPrompt(
   }
 
   parts.push(
-    `\nGenerate at least 8 test cases for this endpoint. Cover positive, negative, edge, validation, and boundary categories.`
+    `\nGenerate at least ${minTestsPerEndpoint} test cases for this endpoint. Cover positive, negative, edge, validation, and boundary categories.`
   );
   parts.push(
     `\nIMPORTANT: Return ONLY valid JSON. The response must be a JSON object: {"testCases": [...]}`
@@ -162,7 +163,8 @@ export function buildPrompt(
 
 export function buildBatchPrompt(
   endpoints: Endpoint[],
-  businessContext = ''
+  businessContext = '',
+  minTestsPerEndpoint = 5
 ): BuildPromptResult {
   const parts: string[] = [];
   parts.push(
@@ -188,7 +190,7 @@ export function buildBatchPrompt(
     parts.push(`\n## Business Rules & Context\n${businessContext}`);
   }
 
-  parts.push(`\nGenerate at least 5 test cases per endpoint. Return ONLY valid JSON: {"testCases": [...]}`);
+  parts.push(`\nGenerate at least ${minTestsPerEndpoint} test cases per endpoint. Return ONLY valid JSON: {"testCases": [...]}`);
   parts.push(`Do NOT include any text, explanation, or markdown. ONLY JSON.`);
 
   return {

@@ -38,11 +38,13 @@ cp .env.example .env
 ### 3. Use the CLI
 
 ```bash
+npm run build   # Compile TypeScript first (required)
+
 # Generate from Swagger file
-node src/cli.js swagger --input tests/sample.swagger.json --format both --verbose
+node dist/cli.js swagger --input tests/sample.swagger.json --format both --verbose
 
 # See all commands
-node src/cli.js --help
+node dist/cli.js --help
 ```
 
 ### 4. Use the Web UI
@@ -58,43 +60,43 @@ npm start
 
 ### `swagger` — Generate from Swagger/OpenAPI file
 ```bash
-node src/cli.js swagger --input ./swagger.json
-node src/cli.js swagger --input ./api.yaml --format markdown
-node src/cli.js swagger --input ./swagger.json --format both --output ./tests/
-node src/cli.js swagger --input ./swagger.json --context "Users must verify email before purchasing"
-node src/cli.js swagger --input ./swagger.json --filter-tags users,products
-node src/cli.js swagger --input ./swagger.json --filter-paths /users,/auth
+node dist/cli.js swagger --input ./swagger.json
+node dist/cli.js swagger --input ./api.yaml --format markdown
+node dist/cli.js swagger --input ./swagger.json --format both --output ./tests/
+node dist/cli.js swagger --input ./swagger.json --context "Users must verify email before purchasing"
+node dist/cli.js swagger --input ./swagger.json --filter-tags users,products
+node dist/cli.js swagger --input ./swagger.json --filter-paths /users,/auth
 ```
 
 ### `routes` — Generate from Express routes + controllers
 ```bash
-node src/cli.js routes --routes ./src/routes/ --controllers ./src/controllers/
-node src/cli.js routes --routes ./src/routes/ --format markdown
+node dist/cli.js routes --routes ./src/routes/ --controllers ./src/controllers/
+node dist/cli.js routes --routes ./src/routes/ --format markdown
 ```
 
 ### `generate` — Generate from all sources combined
 ```bash
-node src/cli.js generate --swagger ./swagger.json --routes ./src/routes/ --controllers ./src/controllers/ --format both
+node dist/cli.js generate --swagger ./swagger.json --routes ./src/routes/ --controllers ./src/controllers/ --format both
 ```
 
 ### `scan` — Auto-detect project sources
 ```bash
-node src/cli.js scan --project ./ --format both
+node dist/cli.js scan --project ./ --format both
 ```
 
 ### `interactive` — Interactive mode
 ```bash
-node src/cli.js interactive
+node dist/cli.js interactive
 ```
 
 ### `validate` — Validate test case JSON
 ```bash
-node src/cli.js validate --input ./output/test-cases.json
+node dist/cli.js validate --input ./output/test-cases.json
 ```
 
 ### `stats` — Show test case statistics
 ```bash
-node src/cli.js stats --input ./output/test-cases.json
+node dist/cli.js stats --input ./output/test-cases.json
 ```
 
 ### Global Flags

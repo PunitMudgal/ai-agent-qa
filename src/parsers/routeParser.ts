@@ -4,6 +4,7 @@
  */
 
 import path from 'path';
+import fs from 'fs-extra';
 import * as logger from '../utils/logger';
 import { scanDirectory, readFileContent } from '../utils/fileUtils';
 import type { RouteInfo } from '../types';
@@ -29,6 +30,7 @@ function findRouterNames(content: string): string[] {
 
 export async function parseRouteFile(filePath: string): Promise<RouteInfo[]> {
   const routes: RouteInfo[] = [];
+  const seen = new Set<string>();
   try {
     const content = await readFileContent(filePath);
     const filename = path.basename(filePath);
@@ -57,6 +59,45 @@ export async function parseRouteFile(filePath: string): Promise<RouteInfo[]> {
 
     const routerNameAlts = [...new Set([...routerNames, 'router', 'app'])].join('|');
 
+    function parseHandlers(handlersRaw: string): { middlewares: string[]; controllerRef: string } {
+      let raw = handlersRaw
+        .replace(/^\[/, '')
+        .replace(/\]\s*,?\s*$/, '');
+      const handlers = raw
+        .split(',')
+        .map(h => h.trim().replace(/[\[\]]/g, ''))
+        .filter(h => h && !h.startsWith('//') && !h.startsWith('/*'));
+      const middlewares = handlers.slice(0, Math.max(0, handlers.length - 1));
+      const controllerRef = handlers[handlers.length - 1] ?? '';
+      return {
+        middlewares: middlewares.map(m => m.trim()),
+        controllerRef: controllerRef.trim(),
+      };
+    }
+
+    function addRoute(routePath: string, method: string, handlersRaw: string, matchedRouter: string | undefined) {
+      const { middlewares, controllerRef } = parseHandlers(handlersRaw);
+      const controllerFunction = controllerRef.includes('.') ? controllerRef.split('.').pop() ?? controllerRef : controllerRef;
+      if (!controllerRef) return;
+      const basePath = (matchedRouter && basePathMap[matchedRouter]) || basePathMap[routerNames[0]] || '';
+      const fullPath = basePath + routePath;
+      const key = `${method}|${fullPath}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      routes.push({
+        method,
+        path: fullPath,
+        rawPath: routePath,
+        basePath,
+        middlewares,
+        controllerFunction: controllerFunction.trim(),
+        controllerRef,
+        validationMiddleware: validationHints,
+        sourceFile: filePath,
+        fileName: filename,
+      });
+    }
+
     const routeRegex = new RegExp(
       `(?:${routerNameAlts})\\.(get|post|put|delete|patch|options|head|all)\\s*\\(\\s*['"\`]([^'"\`]+)['"\`]\\s*,\\s*([\\s\\S]*?)\\)\\s*;?\\s*(?:\\n|$)`,
       'gi'
@@ -66,43 +107,36 @@ export async function parseRouteFile(filePath: string): Promise<RouteInfo[]> {
     while ((match = routeRegex.exec(content)) !== null) {
       const method = match[1].toUpperCase();
       const routePath = match[2];
-      let handlersRaw = match[3].trim();
-
-      handlersRaw = handlersRaw
-        .replace(/^\[/, '')
-        .replace(/\]\s*,?\s*$/, '');
-
-      const handlers = handlersRaw
-        .split(',')
-        .map(h => h.trim().replace(/[\[\]]/g, ''))
-        .filter(h => h && !h.startsWith('//') && !h.startsWith('/*'));
-
-      if (handlers.length === 0) continue;
-
-      const middlewares = handlers.slice(0, -1);
-      const controllerRef = handlers[handlers.length - 1] ?? '';
-
-      let controllerFunction: string = controllerRef;
-      if (controllerRef.includes('.')) {
-        controllerFunction = controllerRef.split('.').pop() ?? controllerRef;
-      }
-
+      const handlersRaw = match[3].trim();
       const matchedRouter = routerNames.find(rn => match![0].startsWith(rn + '.'));
-      const basePath = (matchedRouter && basePathMap[matchedRouter]) || basePathMap[routerNames[0]] || '';
-      const fullPath = basePath + routePath;
+      addRoute(routePath, method, handlersRaw, matchedRouter);
+    }
 
-      routes.push({
-        method,
-        path: fullPath,
-        rawPath: routePath,
-        basePath,
-        middlewares: middlewares.map(m => m.trim()),
-        controllerFunction: controllerFunction.trim(),
-        controllerRef: controllerRef.trim(),
-        validationMiddleware: validationHints,
-        sourceFile: filePath,
-        fileName: filename,
-      });
+    const routeChainRegex = new RegExp(
+      `(?:${routerNameAlts})\\.route\\s*\\(\\s*['"\`]([^'"\`]+)['"\`]\\s*\\)`,
+      'gi'
+    );
+    const methodChainRegex = /\s*\.(get|post|put|delete|patch|options|head)\s*\(\s*([\s\S]*?)\)\s*(?=\s*\.(?:get|post|put|delete|patch|options|head)\s*\(|$)/gi;
+
+    let routeMatch: RegExpExecArray | null;
+    routeChainRegex.lastIndex = 0;
+    while ((routeMatch = routeChainRegex.exec(content)) !== null) {
+      const routePath = routeMatch[1];
+      const chainStart = routeMatch.index + routeMatch[0].length;
+      const nextRoute = content.slice(chainStart).search(
+        new RegExp(`(?:${routerNameAlts})\\.(?:route|get|post|put|delete|patch|options|head)\\s*\\(`, 'i')
+      );
+      const chainEnd = nextRoute >= 0 ? chainStart + nextRoute : content.length;
+      const chainBlock = content.slice(chainStart, chainEnd);
+      const matchedRouter = routerNames.find(rn => routeMatch![0].startsWith(rn + '.'));
+
+      methodChainRegex.lastIndex = 0;
+      let methodMatch: RegExpExecArray | null;
+      while ((methodMatch = methodChainRegex.exec(chainBlock)) !== null) {
+        const method = methodMatch[1].toUpperCase();
+        const handlersRaw = methodMatch[2].trim();
+        addRoute(routePath, method, handlersRaw, matchedRouter);
+      }
     }
 
     logger.debug(`Found ${routes.length} routes in ${filename}`);
@@ -126,6 +160,13 @@ export async function parseRouteFiles(filePaths: string[]): Promise<RouteInfo[]>
 export async function parseRouteDirectory(dirPath: string): Promise<RouteInfo[]> {
   try {
     const resolvedDir = path.resolve(dirPath);
+    if (!(await fs.pathExists(resolvedDir))) {
+      throw new Error(`Routes directory does not exist: ${resolvedDir}`);
+    }
+    const stat = await fs.stat(resolvedDir);
+    if (!stat.isDirectory()) {
+      throw new Error(`Routes path is not a directory: ${resolvedDir}`);
+    }
     logger.debug(`Scanning for route files in: ${resolvedDir}`);
     const files = await scanDirectory(resolvedDir, ['.js', '.ts']);
 
