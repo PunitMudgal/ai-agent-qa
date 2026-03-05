@@ -61,6 +61,8 @@ export interface Endpoint {
   responses: ResponseItem[];
   security: unknown[] | null;
   deprecated?: boolean;
+  /** Route filename (e.g. auth.routes.js) - used for path/tag filtering in routes-only mode */
+  sourceFileName?: string;
 }
 
 // ─── Test cases (formatters, generator, AI prompt) ─────────────────────────

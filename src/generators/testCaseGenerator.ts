@@ -68,9 +68,16 @@ function filterEndpoints(
 
   if (options.filterPaths && options.filterPaths.length > 0) {
     const paths = options.filterPaths.map(p => p.toLowerCase().trim());
-    filtered = filtered.filter(ep =>
-      paths.some(p => ep.path.toLowerCase().startsWith(p))
-    );
+    filtered = filtered.filter(ep => {
+      if (paths.some(p => ep.path.toLowerCase().startsWith(p))) return true;
+      // Route-derived endpoints: path is relative (e.g. /sign-in). Match by filter path segment
+      // to source filename (e.g. /api/v1/auth -> auth.routes.js)
+      const sourceFile = (ep as Endpoint & { sourceFileName?: string }).sourceFileName || '';
+      return paths.some(p => {
+        const segment = p.split('/').filter(Boolean).pop();
+        return segment && sourceFile.toLowerCase().includes(segment.toLowerCase());
+      });
+    });
     logger.debug(`Filtered by paths: ${filtered.length} endpoints remaining`);
   }
 
@@ -255,6 +262,13 @@ export async function generateFromSwaggerString(
   return { testCases: allTestCases, savedFiles };
 }
 
+/** Infer tag from route filename (e.g. auth.routes.js -> auth, user.routes.js -> users) */
+function inferTagFromFileName(fileName: string): string {
+  const base = fileName.replace(/\.(js|ts|mjs|cjs)$/i, '');
+  const match = base.match(/^(.+?)(?:\.(?:route|router|api|endpoint)s?)?$/i);
+  return (match?.[1] ?? base).toLowerCase();
+}
+
 export async function generateFromRoutes(
   routesDir: string,
   controllersDir: string | null,
@@ -282,26 +296,16 @@ export async function generateFromRoutes(
     );
   }
 
-  const allTestCases: TestCase[] = [];
-  let idCounter = 1;
-
-  for (let i = 0; i < routes.length; i++) {
-    const route = routes[i];
-    const label = `${route.method} ${route.path}`;
-
-    const hint = controllerHints.find(
-      h =>
-        h.functionName.toLowerCase() ===
-        route.controllerFunction.toLowerCase()
-    );
-
-    const endpoint: Endpoint = {
+  // Build endpoints and apply filters (tags from filename, path by segment match)
+  const endpoints: Endpoint[] = routes.map(route => {
+    const tag = inferTagFromFileName(route.fileName);
+    return {
       method: route.method,
       path: route.path,
       operationId: route.controllerFunction,
       summary: '',
       description: `Route from ${route.fileName}. Middlewares: ${route.middlewares.join(', ') || 'none'}`,
-      tags: [],
+      tags: [tag],
       parameters: [],
       requestBody: null,
       responses: [],
@@ -312,11 +316,33 @@ export async function generateFromRoutes(
       )
         ? [{ bearerAuth: [] }]
         : null,
+      sourceFileName: route.fileName,
     };
+  });
+
+  const filteredEndpoints = filterEndpoints(endpoints, opts);
+  if (filteredEndpoints.length === 0) {
+    logger.warn('No endpoints match the given filters');
+    return { testCases: [], savedFiles: [] };
+  }
+  logger.info(`Generating test cases for ${filteredEndpoints.length} endpoints (filtered from ${routes.length})...`);
+
+  const allTestCases: TestCase[] = [];
+  let idCounter = 1;
+
+  for (let i = 0; i < filteredEndpoints.length; i++) {
+    const ep = filteredEndpoints[i];
+    const label = `${ep.method} ${ep.path}`;
+
+    const hint = controllerHints.find(
+      h =>
+        h.functionName.toLowerCase() ===
+        (ep.operationId ?? '').toLowerCase()
+    );
 
     try {
       const { systemPrompt, userPrompt } = buildPrompt(
-        endpoint,
+        ep,
         opts.businessContext,
         hint ?? null,
         opts.minTestsPerEndpoint ?? DEFAULT_OPTIONS.minTestsPerEndpoint
@@ -330,7 +356,7 @@ export async function generateFromRoutes(
       handleGenerationError(err, label);
     }
 
-    if (i < routes.length - 1) await sleep(API_CALL_DELAY_MS);
+    if (i < filteredEndpoints.length - 1) await sleep(API_CALL_DELAY_MS);
   }
 
   const savedFiles = await saveOutput(allTestCases, opts);

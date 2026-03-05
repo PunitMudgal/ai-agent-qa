@@ -51,7 +51,7 @@ npx ai-agent-qa routes --routes ./src/routes --controllers ./src/controllers \
   --output ./output --format both --context "All write ops require admin role"
 ```
 
-**Note:** `--filter-tags` and `--filter-paths` apply when Swagger is used (swagger command or generate/scan with swagger). For routes-only, filters are not applied.
+**Note:** `--filter-tags` and `--filter-paths` apply to both Swagger and routes. For routes-only, tags are inferred from the route filename (e.g. `auth.routes.js` → tag `auth`), and path filters match by the last path segment to filename (e.g. `/api/v1/auth` matches routes from `auth.routes.js`).
 
 ---
 
