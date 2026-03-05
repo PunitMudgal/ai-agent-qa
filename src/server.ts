@@ -53,13 +53,19 @@ app.get('/', (req: Request, res: Response) => {
 });
 
 app.get('/health', (req: Request, res: Response) => {
+  const groqOk =
+    !!process.env.GROQ_API_KEY &&
+    process.env.GROQ_API_KEY !== 'your_groq_api_key_here';
+  const geminiOk =
+    !!process.env.GEMINI_API_KEY &&
+    process.env.GEMINI_API_KEY !== 'your_gemini_api_key_here';
   res.json({
     status: 'ok',
     version: '1.0.0',
     uptime: process.uptime(),
-    apiKeyConfigured:
-      !!process.env.GROQ_API_KEY &&
-      process.env.GROQ_API_KEY !== 'your_groq_api_key_here',
+    apiKeyConfigured: groqOk || geminiOk,
+    groqConfigured: groqOk,
+    geminiConfigured: geminiOk,
   });
 });
 
@@ -116,13 +122,17 @@ app.post('/generate', async (req: Request, res: Response) => {
       });
     }
 
-    if (
-      !process.env.GROQ_API_KEY ||
-      process.env.GROQ_API_KEY === 'your_groq_api_key_here'
-    ) {
+    const groqOk =
+      !!process.env.GROQ_API_KEY &&
+      process.env.GROQ_API_KEY !== 'your_groq_api_key_here';
+    const geminiOk =
+      !!process.env.GEMINI_API_KEY &&
+      process.env.GEMINI_API_KEY !== 'your_gemini_api_key_here';
+    if (!groqOk && !geminiOk) {
       return res.status(400).json({
         error:
-          'Groq API key not configured. Add GROQ_API_KEY to your .env file. Get a free key at console.groq.com',
+          'No AI API key configured. Add GROQ_API_KEY and/or GEMINI_API_KEY to your .env file. ' +
+          'Get Groq at console.groq.com, Gemini at aistudio.google.com/apikey',
       });
     }
 
@@ -259,9 +269,21 @@ app.listen(PORT, () => {
   console.log('  ──────────────────────────────────');
   console.log(`  🌐 URL:    http://localhost:${PORT}`);
   console.log(`  📁 Output: ${outputDir}`);
-  console.log(
-    `  🔑 API Key: ${process.env.GROQ_API_KEY && process.env.GROQ_API_KEY !== 'your_groq_api_key_here' ? 'Configured ✅' : 'Not configured ❌'}`
-  );
+  const groqOk =
+    !!process.env.GROQ_API_KEY &&
+    process.env.GROQ_API_KEY !== 'your_groq_api_key_here';
+  const geminiOk =
+    !!process.env.GEMINI_API_KEY &&
+    process.env.GEMINI_API_KEY !== 'your_gemini_api_key_here';
+  const apiStatus =
+    groqOk && geminiOk
+      ? 'Groq + Gemini ✅'
+      : groqOk
+        ? 'Groq ✅'
+        : geminiOk
+          ? 'Gemini ✅'
+          : 'Not configured ❌';
+  console.log(`  🔑 API Key: ${apiStatus}`);
   console.log();
 });
 

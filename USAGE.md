@@ -8,9 +8,10 @@ This guide shows how to use the tool **with the UI and CLI**, using **Swagger/Op
 
 1. **Node.js** (v16+).
 2. **Groq API key** (free at [console.groq.com](https://console.groq.com)).
-3. In the **ai-agent-qa** project root, copy `.env.example` to `.env` and set:
+3. In the **ai-agent-qa** project root, copy `.env.example` to `.env` and set at least one API key:
    ```bash
-   GROQ_API_KEY=your_actual_groq_api_key_here
+   GROQ_API_KEY=your_actual_groq_api_key_here   # Primary (free at console.groq.com)
+   GEMINI_API_KEY=your_actual_gemini_api_key    # Optional fallback when Groq limit reached (free at aistudio.google.com/apikey)
    ```
 
 ---

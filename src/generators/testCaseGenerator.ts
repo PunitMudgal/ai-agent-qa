@@ -8,7 +8,7 @@ import { parseSwaggerFile, parseSwaggerString } from '../parsers/swaggerParser';
 import { parseRouteDirectory } from '../parsers/routeParser';
 import { parseControllerDirectory } from '../parsers/controllerParser';
 import { buildPrompt } from '../ai/promptBuilder';
-import { generateTestCases, initGroqClient } from '../ai/groqClient';
+import { generateTestCases, initAIProvider } from '../ai/groqClient';
 import { formatTestCases as formatJson, saveToFile as saveJson } from '../formatters/jsonFormatter';
 import { formatTestCases as formatMd, saveToFile as saveMd } from '../formatters/markdownFormatter';
 import { formatTestCasesAsJestByEndpoint } from '../formatters/jestSupertestFormatter';
@@ -29,8 +29,8 @@ import type {
 } from '../types';
 
 const GROQ_DAILY_LIMIT_MSG =
-  'Daily token limit reached for Groq. Retrying will not help until the limit resets (usually next day).\n' +
-  '  Options: 1) Wait and run again later  2) Use --filter-paths or --filter-tags to generate for fewer endpoints  3) Reduce --min-tests  4) Upgrade at https://console.groq.com/settings/billing';
+  'Groq daily limit reached. Falling back to Gemini if GEMINI_API_KEY is set; otherwise generation will stop.\n' +
+  '  Options: 1) Add GEMINI_API_KEY to .env as fallback  2) Use --filter-paths or --filter-tags  3) Reduce --min-tests  4) Wait for limit reset';
 
 function handleGenerationError(err: unknown, label: string): void {
   const code = (err as { code?: string }).code;
@@ -156,7 +156,7 @@ export async function generateFromSwagger(
   options: Partial<GenerationOptions> = {}
 ): Promise<GenerateResult> {
   const opts = { ...DEFAULT_OPTIONS, ...options };
-  initGroqClient();
+  initAIProvider();
 
   logger.info(`Parsing Swagger file: ${swaggerPath}`);
   let endpoints = await parseSwaggerFile(swaggerPath);
@@ -213,7 +213,7 @@ export async function generateFromSwaggerString(
   options: Partial<GenerationOptions> = {}
 ): Promise<GenerateResult> {
   const opts = { ...DEFAULT_OPTIONS, ...options };
-  initGroqClient();
+  initAIProvider();
 
   logger.info('Parsing Swagger content...');
   let endpoints = await parseSwaggerString(swaggerContent);
@@ -261,7 +261,7 @@ export async function generateFromRoutes(
   options: Partial<GenerationOptions> = {}
 ): Promise<GenerateResult> {
   const opts = { ...DEFAULT_OPTIONS, ...options };
-  initGroqClient();
+  initAIProvider();
 
   logger.info('Scanning route files...');
   const routes = await parseRouteDirectory(routesDir);
@@ -341,7 +341,7 @@ export async function generateFromMixed(
   options: Partial<GenerationMixedOptions> = {}
 ): Promise<GenerateResult> {
   const opts = { ...DEFAULT_OPTIONS, ...options };
-  initGroqClient();
+  initAIProvider();
 
   let endpoints: Endpoint[] = [];
   let controllerHints: ControllerHint[] = [];

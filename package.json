@@ -1,12 +1,13 @@
 {
-  "name": "qa-test-generator",
+  "name": "ai-agent-qa",
   "version": "1.0.0",
   "description": "AI-powered QA test case generator for Node.js backend projects",
   "main": "dist/server.js",
   "bin": {
-    "qa-gen": "./dist/cli.js"
+    "ai-agent-qa": "./dist/cli.js"
   },
   "scripts": {
+    "prepare": "npm run build",
     "build": "tsc",
     "start": "node dist/server.js",
     "dev": "nodemon --exec \"ts-node --transpile-only\" src/server.ts",
@@ -28,6 +29,7 @@
   "license": "MIT",
   "dependencies": {
     "@apidevtools/swagger-parser": "^10.1.0",
+    "@google/genai": "^1.43.0",
     "acorn": "^8.16.0",
     "chalk": "^4.1.2",
     "commander": "^12.1.0",

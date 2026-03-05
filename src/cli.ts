@@ -18,7 +18,7 @@ import type { TestCase, GenerationOptions } from './types';
 const program = new Command();
 
 program
-  .name('qa-gen')
+  .name('ai-agent-qa')
   .description(
     '🤖 AI-powered QA Test Case Generator — Generate comprehensive test cases from Swagger/OpenAPI specs, Express routes, and controller logic.'
   )
