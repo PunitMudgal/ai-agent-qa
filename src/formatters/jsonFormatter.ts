@@ -5,9 +5,22 @@
 
 import { writeFile } from '../utils/fileUtils';
 import * as logger from '../utils/logger';
-import type { TestCase, FormattedJsonOutput } from '../types';
+import type {
+  CoverageBasis,
+  TestCase,
+  FormattedJsonOutput,
+  ParseWarning,
+} from '../types';
 
-export function formatTestCases(testCases: TestCase[]): FormattedJsonOutput {
+interface JsonFormatterExtras {
+  coverageBasis?: CoverageBasis;
+  warnings?: ParseWarning[];
+}
+
+export function formatTestCases(
+  testCases: TestCase[],
+  extras: JsonFormatterExtras = {}
+): FormattedJsonOutput {
   const countByCategory: Record<string, number> = {};
   const countByEndpoint: Record<string, number> = {};
   const countByPriority: Record<string, number> = {};
@@ -32,6 +45,7 @@ export function formatTestCases(testCases: TestCase[]): FormattedJsonOutput {
       countByPriority,
       generator: 'QA Test Generator (Groq + Llama 3.3)',
     },
+    coverageBasis: extras.coverageBasis,
     testCases: testCases.map(tc => ({
       id: tc.id ?? '',
       endpoint: tc.endpoint ?? '',
@@ -55,6 +69,7 @@ export function formatTestCases(testCases: TestCase[]): FormattedJsonOutput {
       notes: tc.notes ?? '',
       status: tc.status ?? 'Pending',
     })),
+    warnings: extras.warnings ?? [],
   };
 }
 

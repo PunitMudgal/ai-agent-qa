@@ -4,6 +4,7 @@
  */
 
 import path from 'path';
+import { createCoverageBasis } from '../coverage';
 import { parseSwaggerFile, parseSwaggerString } from '../parsers/swaggerParser';
 import { parseRouteDirectory } from '../parsers/routeParser';
 import { parseControllerDirectory } from '../parsers/controllerParser';
@@ -12,7 +13,7 @@ import { generateTestCases, initAIProvider } from '../ai/groqClient';
 import { formatTestCases as formatJson, saveToFile as saveJson } from '../formatters/jsonFormatter';
 import { formatTestCases as formatMd, saveToFile as saveMd } from '../formatters/markdownFormatter';
 import { formatTestCasesAsJestByEndpoint } from '../formatters/jestSupertestFormatter';
-import { ensureOutputDir, generateBatchFilename, writeFile, validateAndWriteJestFile } from '../utils/fileUtils';
+import { ensureOutputDir, generateBatchFilename, validateAndWriteJestFile } from '../utils/fileUtils';
 import * as logger from '../utils/logger';
 
 function sleep(ms: number): Promise<void> {
@@ -21,11 +22,14 @@ function sleep(ms: number): Promise<void> {
 
 const API_CALL_DELAY_MS = 500;
 import type {
+  CoverageBasis,
+  CoverageSourceEndpoint,
   Endpoint,
   TestCase,
   ControllerHint,
   GenerationOptions,
   GenerationMixedOptions,
+  ParseWarning,
 } from '../types';
 
 const GROQ_DAILY_LIMIT_MSG =
@@ -61,7 +65,7 @@ function filterEndpoints(
   if (options.filterTags && options.filterTags.length > 0) {
     const tags = options.filterTags.map(t => t.toLowerCase().trim());
     filtered = filtered.filter(
-      ep => ep.tags && ep.tags.some(t => tags.includes(t.toLowerCase()))
+      ep => ep.tags && ep.tags.some(t => tags.some(filterTag => tagMatchesFilter(t, filterTag)))
     );
     logger.debug(`Filtered by tags: ${filtered.length} endpoints remaining`);
   }
@@ -84,6 +88,30 @@ function filterEndpoints(
   return filtered;
 }
 
+function normalizeTag(tag: string): string {
+  return tag
+    .toLowerCase()
+    .trim()
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ');
+}
+
+function singularize(tag: string): string {
+  return tag.endsWith('s') ? tag.slice(0, -1) : tag;
+}
+
+function tagMatchesFilter(endpointTag: string, filterTag: string): boolean {
+  const endpointNorm = normalizeTag(endpointTag);
+  const filterNorm = normalizeTag(filterTag);
+
+  if (!endpointNorm || !filterNorm) return false;
+  if (endpointNorm === filterNorm) return true;
+  if (singularize(endpointNorm) === singularize(filterNorm)) return true;
+  if (endpointNorm.includes(filterNorm)) return true;
+  if (filterNorm.includes(endpointNorm)) return true;
+  return false;
+}
+
 function assignIds(testCases: unknown[], startId = 1): TestCase[] {
   return testCases.map((tc, i) => {
     const record = (typeof tc === 'object' && tc !== null ? tc : {}) as Record<
@@ -100,7 +128,11 @@ function assignIds(testCases: unknown[], startId = 1): TestCase[] {
 
 async function saveOutput(
   testCases: TestCase[],
-  options: GenerationOptions
+  options: GenerationOptions,
+  extras: {
+    coverageBasis?: CoverageBasis;
+    warnings?: ParseWarning[];
+  } = {}
 ): Promise<string[]> {
   const outputDir = path.resolve(options.outputDir || DEFAULT_OPTIONS.outputDir);
   await ensureOutputDir(outputDir);
@@ -111,7 +143,7 @@ async function saveOutput(
   if (format === 'json' || format === 'both') {
     const filename = generateBatchFilename('json');
     const filePath = path.join(outputDir, filename);
-    const formatted = formatJson(testCases);
+    const formatted = formatJson(testCases, extras);
     await saveJson(formatted, filePath);
     savedFiles.push(filePath);
     logger.success(`JSON saved: ${filePath}`);
@@ -156,6 +188,17 @@ async function saveOutput(
 export interface GenerateResult {
   testCases: TestCase[];
   savedFiles: string[];
+  warnings: ParseWarning[];
+  coverageBasis: CoverageBasis;
+}
+
+function logParseWarnings(warnings: ParseWarning[]): void {
+  warnings.forEach(warning => {
+    const location = warning.line ? `:${warning.line}` : '';
+    logger.warn(
+      `[${warning.kind}] ${path.basename(warning.file)}${location} ${warning.message}`
+    );
+  });
 }
 
 export async function generateFromSwagger(
@@ -166,13 +209,26 @@ export async function generateFromSwagger(
   initAIProvider();
 
   logger.info(`Parsing Swagger file: ${swaggerPath}`);
-  let endpoints = await parseSwaggerFile(swaggerPath);
+  let endpoints: Endpoint[] = (await parseSwaggerFile(swaggerPath)).map(endpoint => ({
+    ...endpoint,
+    sourceKind: endpoint.sourceKind ?? 'swagger',
+  }));
   logger.success(`Found ${endpoints.length} endpoints`);
+  const discoveredTotal = endpoints.length;
 
   endpoints = filterEndpoints(endpoints, opts);
+  const coverageBasis = createCoverageBasis({
+    sourceType: 'swagger',
+    discoveredTotal,
+    endpoints: toCoverageSourceEndpoints(endpoints),
+    filters: {
+      tags: opts.filterTags,
+      paths: opts.filterPaths,
+    },
+  });
   if (endpoints.length === 0) {
     logger.warn('No endpoints match the given filters');
-    return { testCases: [], savedFiles: [] };
+    return { testCases: [], savedFiles: [], warnings: [], coverageBasis };
   }
 
   logger.info(`Generating test cases for ${endpoints.length} endpoints...`);
@@ -211,8 +267,11 @@ export async function generateFromSwagger(
 
   logger.info(`Total test cases generated: ${allTestCases.length}`);
 
-  const savedFiles = await saveOutput(allTestCases, opts);
-  return { testCases: allTestCases, savedFiles };
+  const savedFiles = await saveOutput(allTestCases, opts, {
+    coverageBasis,
+    warnings: [],
+  });
+  return { testCases: allTestCases, savedFiles, warnings: [], coverageBasis };
 }
 
 export async function generateFromSwaggerString(
@@ -223,13 +282,26 @@ export async function generateFromSwaggerString(
   initAIProvider();
 
   logger.info('Parsing Swagger content...');
-  let endpoints = await parseSwaggerString(swaggerContent);
+  let endpoints: Endpoint[] = (await parseSwaggerString(swaggerContent)).map(endpoint => ({
+    ...endpoint,
+    sourceKind: endpoint.sourceKind ?? 'swagger',
+  }));
   logger.success(`Found ${endpoints.length} endpoints`);
+  const discoveredTotal = endpoints.length;
 
   endpoints = filterEndpoints(endpoints, opts);
+  const coverageBasis = createCoverageBasis({
+    sourceType: 'swagger',
+    discoveredTotal,
+    endpoints: toCoverageSourceEndpoints(endpoints),
+    filters: {
+      tags: opts.filterTags,
+      paths: opts.filterPaths,
+    },
+  });
   if (endpoints.length === 0) {
     logger.warn('No endpoints match the given filters');
-    return { testCases: [], savedFiles: [] };
+    return { testCases: [], savedFiles: [], warnings: [], coverageBasis };
   }
 
   const allTestCases: TestCase[] = [];
@@ -258,8 +330,11 @@ export async function generateFromSwaggerString(
     if (i < endpoints.length - 1) await sleep(API_CALL_DELAY_MS);
   }
 
-  const savedFiles = await saveOutput(allTestCases, opts);
-  return { testCases: allTestCases, savedFiles };
+  const savedFiles = await saveOutput(allTestCases, opts, {
+    coverageBasis,
+    warnings: [],
+  });
+  return { testCases: allTestCases, savedFiles, warnings: [], coverageBasis };
 }
 
 /** Infer tag from route filename (e.g. auth.routes.js -> auth, user.routes.js -> users) */
@@ -267,6 +342,16 @@ function inferTagFromFileName(fileName: string): string {
   const base = fileName.replace(/\.(js|ts|mjs|cjs)$/i, '');
   const match = base.match(/^(.+?)(?:\.(?:route|router|api|endpoint)s?)?$/i);
   return (match?.[1] ?? base).toLowerCase();
+}
+
+function toCoverageSourceEndpoints(endpoints: Endpoint[]): CoverageSourceEndpoint[] {
+  return endpoints.map(endpoint => ({
+    method: endpoint.method,
+    path: endpoint.path,
+    tags: endpoint.tags ?? [],
+    sourceKind: endpoint.sourceKind ?? 'generated',
+    sourceFileName: endpoint.sourceFileName,
+  }));
 }
 
 export async function generateFromRoutes(
@@ -278,7 +363,9 @@ export async function generateFromRoutes(
   initAIProvider();
 
   logger.info('Scanning route files...');
-  const routes = await parseRouteDirectory(routesDir);
+  const routeResult = await parseRouteDirectory(routesDir);
+  const routes = routeResult.routes;
+  const warnings = [...routeResult.warnings];
   if (routes.length === 0) {
     throw new Error(
       `No routes found in "${routesDir}". Check that the path is correct and contains route files ` +
@@ -286,14 +373,18 @@ export async function generateFromRoutes(
     );
   }
   logger.success(`Found ${routes.length} routes`);
+  logParseWarnings(routeResult.warnings);
 
   let controllerHints: ControllerHint[] = [];
   if (controllersDir) {
     logger.info('Scanning controller files...');
-    controllerHints = await parseControllerDirectory(controllersDir);
+    const controllerResult = await parseControllerDirectory(controllersDir);
+    controllerHints = controllerResult.hints;
+    warnings.push(...controllerResult.warnings);
     logger.success(
       `Extracted hints from ${controllerHints.length} controller functions`
     );
+    logParseWarnings(controllerResult.warnings);
   }
 
   // Build endpoints and apply filters (tags from filename, path by segment match)
@@ -317,13 +408,24 @@ export async function generateFromRoutes(
         ? [{ bearerAuth: [] }]
         : null,
       sourceFileName: route.fileName,
+      sourceKind: 'routes',
     };
   });
 
   const filteredEndpoints = filterEndpoints(endpoints, opts);
+  const coverageBasis = createCoverageBasis({
+    sourceType: 'routes',
+    discoveredTotal: endpoints.length,
+    endpoints: toCoverageSourceEndpoints(filteredEndpoints),
+    filters: {
+      tags: opts.filterTags,
+      paths: opts.filterPaths,
+    },
+    warnings,
+  });
   if (filteredEndpoints.length === 0) {
     logger.warn('No endpoints match the given filters');
-    return { testCases: [], savedFiles: [] };
+    return { testCases: [], savedFiles: [], warnings, coverageBasis };
   }
   logger.info(`Generating test cases for ${filteredEndpoints.length} endpoints (filtered from ${routes.length})...`);
 
@@ -359,8 +461,11 @@ export async function generateFromRoutes(
     if (i < filteredEndpoints.length - 1) await sleep(API_CALL_DELAY_MS);
   }
 
-  const savedFiles = await saveOutput(allTestCases, opts);
-  return { testCases: allTestCases, savedFiles };
+  const savedFiles = await saveOutput(allTestCases, opts, {
+    coverageBasis,
+    warnings,
+  });
+  return { testCases: allTestCases, savedFiles, warnings, coverageBasis };
 }
 
 export async function generateFromMixed(
@@ -371,17 +476,23 @@ export async function generateFromMixed(
 
   let endpoints: Endpoint[] = [];
   let controllerHints: ControllerHint[] = [];
+  const warnings: ParseWarning[] = [];
 
   if (opts.swagger) {
     logger.info('Parsing Swagger file...');
-    const swaggerEndpoints = await parseSwaggerFile(opts.swagger);
+    const swaggerEndpoints = (await parseSwaggerFile(opts.swagger)).map(endpoint => ({
+      ...endpoint,
+      sourceKind: endpoint.sourceKind ?? 'swagger',
+    }));
     endpoints.push(...swaggerEndpoints);
     logger.success(`Found ${swaggerEndpoints.length} endpoints from Swagger`);
   }
 
   if (opts.routes) {
     logger.info('Scanning route files...');
-    const routes = await parseRouteDirectory(opts.routes);
+    const routeResult = await parseRouteDirectory(opts.routes);
+    const routes = routeResult.routes;
+    warnings.push(...routeResult.warnings);
     if (routes.length === 0) {
       throw new Error(
         `No routes found in "${opts.routes}". Check that the path is correct and contains route files ` +
@@ -389,19 +500,21 @@ export async function generateFromMixed(
       );
     }
     logger.success(`Found ${routes.length} routes`);
+    logParseWarnings(routeResult.warnings);
 
     for (const route of routes) {
       const exists = endpoints.find(
         ep => ep.method === route.method && ep.path === route.path
       );
       if (!exists) {
+        const tag = inferTagFromFileName(route.fileName);
         endpoints.push({
           method: route.method,
           path: route.path,
           operationId: route.controllerFunction,
           summary: '',
           description: `From route file: ${route.fileName}`,
-          tags: [],
+          tags: [tag],
           parameters: [],
           requestBody: null,
           responses: [],
@@ -410,6 +523,8 @@ export async function generateFromMixed(
           )
             ? [{ bearerAuth: [] }]
             : null,
+          sourceFileName: route.fileName,
+          sourceKind: 'routes',
         });
       }
     }
@@ -417,14 +532,28 @@ export async function generateFromMixed(
 
   if (opts.controllers) {
     logger.info('Scanning controller files...');
-    controllerHints = await parseControllerDirectory(opts.controllers);
+    const controllerResult = await parseControllerDirectory(opts.controllers);
+    controllerHints = controllerResult.hints;
+    warnings.push(...controllerResult.warnings);
     logger.success(`Extracted hints from ${controllerHints.length} functions`);
+    logParseWarnings(controllerResult.warnings);
   }
 
+  const discoveredTotal = endpoints.length;
   endpoints = filterEndpoints(endpoints, opts);
+  const coverageBasis = createCoverageBasis({
+    sourceType: opts.swagger && opts.routes ? 'mixed' : opts.swagger ? 'swagger' : 'routes',
+    discoveredTotal,
+    endpoints: toCoverageSourceEndpoints(endpoints),
+    filters: {
+      tags: opts.filterTags,
+      paths: opts.filterPaths,
+    },
+    warnings,
+  });
   if (endpoints.length === 0) {
     logger.warn('No endpoints to generate test cases for');
-    return { testCases: [], savedFiles: [] };
+    return { testCases: [], savedFiles: [], warnings, coverageBasis };
   }
 
   logger.info(`Generating test cases for ${endpoints.length} endpoints...`);
@@ -462,8 +591,11 @@ export async function generateFromMixed(
     if (i < endpoints.length - 1) await sleep(API_CALL_DELAY_MS);
   }
 
-  const savedFiles = await saveOutput(allTestCases, opts);
-  return { testCases: allTestCases, savedFiles };
+  const savedFiles = await saveOutput(allTestCases, opts, {
+    coverageBasis,
+    warnings,
+  });
+  return { testCases: allTestCases, savedFiles, warnings, coverageBasis };
 }
 
 export { filterEndpoints };

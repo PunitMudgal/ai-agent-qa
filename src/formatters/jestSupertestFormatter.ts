@@ -4,6 +4,7 @@
  */
 
 import type { TestCase, InputData, ExpectedOutput } from '../types';
+import { resolvePathTemplate } from '../runner/utils';
 import { generateJestTestFilename } from '../utils/fileUtils';
 
 export interface JestFormatterOptions {
@@ -24,26 +25,9 @@ function escapeForJs(str: string): string {
     .replace(/\r/g, '\\r');
 }
 
-/** Sanitize a value for use as a path segment - never emit code-like or broken strings */
-function sanitizePathParam(value: unknown): string {
-  const s = String(value ?? '');
-  if (s.length > 200) return s.slice(0, 200);
-  if (/[\r\n'"\\`{}]/.test(s)) {
-    return s.replace(/[\r\n'"\\`{}]/g, '_');
-  }
-  return s;
-}
-
 /** Build the request path with path params substituted (e.g. /users/:id + { id: 123 } -> /users/123) */
 function buildPath(pathTemplate: string, pathParams: Record<string, unknown>): string {
-  let path = pathTemplate;
-  for (const [key, value] of Object.entries(pathParams || {})) {
-    const placeholder = ':' + key;
-    if (path.includes(placeholder)) {
-      path = path.replace(new RegExp(':' + key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), sanitizePathParam(value));
-    }
-  }
-  return path;
+  return resolvePathTemplate(pathTemplate, pathParams);
 }
 
 /** Serialize a value for embedding in generated source (JSON for objects, safe string for primitives) */

@@ -325,6 +325,23 @@
       background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
       animation: shimmer 2s infinite;
     }
+    .action-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 14px;
+    }
+    .btn-secondary {
+      background: linear-gradient(135deg, #1f766e, #155e75);
+    }
+    .btn-secondary:hover {
+      box-shadow: 0 8px 25px rgba(21, 94, 117, 0.35);
+    }
+    .run-last-btn {
+      margin-top: 10px;
+      width: 100%;
+      display: none;
+    }
     @keyframes shimmer {
       100% { left: 100%; }
     }
@@ -589,6 +606,127 @@
     .md-render pre code { background: transparent; padding: 0; }
     .md-render pre { background: var(--surface-3); padding: 12px; border-radius: 8px; overflow-x: auto; }
     .md-render hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
+    .report-section {
+      margin-bottom: 18px;
+      padding: 14px;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+    }
+    .report-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      margin-bottom: 10px;
+    }
+    .report-list {
+      font-size: 13px;
+      color: var(--text);
+    }
+    .report-list li {
+      margin-left: 18px;
+      margin-bottom: 6px;
+    }
+    .coverage-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 10px;
+    }
+    .coverage-card {
+      padding: 12px;
+      border-radius: 10px;
+      background: var(--surface-3);
+      border: 1px solid var(--border);
+    }
+    .coverage-card-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      color: var(--text-dim);
+      margin-bottom: 6px;
+    }
+    .coverage-card-value {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .coverage-card-subtle {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .coverage-scope {
+      margin-top: 12px;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    .coverage-inline-note {
+      margin-top: 10px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      background: var(--orange-bg);
+      border: 1px solid rgba(245,158,11,0.2);
+      color: var(--orange);
+      font-size: 12px;
+      display: none;
+    }
+    .coverage-row {
+      margin-bottom: 12px;
+    }
+    .coverage-row-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 6px;
+      font-size: 13px;
+    }
+    .coverage-progress {
+      width: 100%;
+      height: 10px;
+      border-radius: 999px;
+      background: var(--surface-3);
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+    .coverage-progress-fill {
+      height: 100%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, var(--blue), var(--accent-light));
+    }
+    .coverage-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 600;
+      border: 1px solid var(--border);
+      background: var(--surface-3);
+      color: var(--text-muted);
+      margin-right: 4px;
+      margin-bottom: 4px;
+    }
+    .coverage-chip.good {
+      color: var(--green);
+      border-color: rgba(34,197,94,0.2);
+      background: var(--green-bg);
+    }
+    .coverage-chip.warn {
+      color: var(--orange);
+      border-color: rgba(245,158,11,0.2);
+      background: var(--orange-bg);
+    }
+    .coverage-chip.bad {
+      color: var(--red);
+      border-color: rgba(239,68,68,0.2);
+      background: var(--red-bg);
+    }
+    .coverage-empty {
+      font-size: 13px;
+      color: var(--text-dim);
+    }
 
     /* ── Error ── */
     .error-box {
@@ -727,7 +865,39 @@
             <div class="form-group" id="jestStrictAssertionsGroup">
               <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
                 <input type="checkbox" id="jestStrictAssertions" style="width: auto;">
-                Strict body assertions (default: status-only to avoid false failures)
+                Strict body assertions (used for generated Jest and executable runner)
+              </label>
+            </div>
+            <div class="form-group">
+              <label>Execution Mode</label>
+              <div class="radio-group">
+                <label><input type="radio" name="runnerMode" value="base-url" checked> Base URL</label>
+                <label><input type="radio" name="runnerMode" value="app-import"> App Import</label>
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="runBaseUrl">Runner Base URL</label>
+              <input type="text" id="runBaseUrl" placeholder="http://localhost:3000"
+                style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font-size: 13px;">
+            </div>
+            <div class="form-group">
+              <label for="appModulePath">App Module Path (app-import mode)</label>
+              <input type="text" id="appModulePath" placeholder="/absolute/path/to/app.js or app.ts"
+                style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font-size: 13px;">
+            </div>
+            <div class="form-group">
+              <label for="runnerHooksPath">Runner Hook File (optional)</label>
+              <input type="text" id="runnerHooksPath" placeholder="/absolute/path/to/runner-hooks.js"
+                style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font-size: 13px;">
+            </div>
+            <div class="form-group">
+              <label for="timeoutMs">Runner Timeout (ms)</label>
+              <input type="number" id="timeoutMs" value="10000" min="1000" step="1000">
+            </div>
+            <div class="form-group">
+              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                <input type="checkbox" id="allowMutations" style="width: auto;">
+                Allow mutating endpoints (POST/PUT/PATCH/DELETE)
               </label>
             </div>
           </div>
@@ -735,10 +905,17 @@
       </div>
 
       <!-- Generate Button -->
-      <button class="btn-generate" id="generateBtn" onclick="generate()">
-        <span class="shimmer"></span>
-        ⚡ Generate Test Cases
-      </button>
+      <div class="action-row">
+        <button class="btn-generate" id="generateBtn" onclick="generate(false)">
+          <span class="shimmer"></span>
+          ⚡ Generate
+        </button>
+        <button class="btn-generate btn-secondary" id="generateRunBtn" onclick="generate(true)">
+          <span class="shimmer"></span>
+          ▶ Generate + Run
+        </button>
+      </div>
+      <button class="btn-download run-last-btn" id="runLastBtn" onclick="runLastResult()">▶ Run Last Result</button>
       <div style="text-align: center; margin-top: 8px; font-size: 11px; color: var(--text-dim);">
         Ctrl + Enter to generate
       </div>
@@ -786,6 +963,8 @@
           <button class="result-tab-btn active" data-rtab="preview">📊 Preview</button>
           <button class="result-tab-btn" data-rtab="jsonView">{ } JSON</button>
           <button class="result-tab-btn" data-rtab="mdView">📝 Markdown</button>
+          <button class="result-tab-btn" data-rtab="execView">🧪 Execution</button>
+          <button class="result-tab-btn" data-rtab="coverageView">📈 Coverage</button>
         </div>
 
         <!-- Preview Tab -->
@@ -820,6 +999,80 @@
           </div>
           <div class="md-render" id="mdRender"></div>
           <pre id="mdRaw" style="display:none;"></pre>
+        </div>
+
+        <div class="result-content" id="execView">
+          <div class="report-section">
+            <div class="report-title">Run Summary</div>
+            <div id="execSummary"></div>
+          </div>
+          <div class="report-section">
+            <div class="report-title">Endpoint Summary</div>
+            <table class="preview-table">
+              <thead>
+                <tr>
+                  <th>Method</th>
+                  <th>Endpoint</th>
+                  <th>Total</th>
+                  <th>Passed</th>
+                  <th>Failed</th>
+                  <th>Skipped</th>
+                </tr>
+              </thead>
+              <tbody id="execEndpointBody"></tbody>
+            </table>
+          </div>
+          <div class="report-section">
+            <div class="report-title">Failed Tests</div>
+            <ul class="report-list" id="execFailedList"></ul>
+          </div>
+          <div class="report-section">
+            <div class="report-title">Skipped Tests</div>
+            <ul class="report-list" id="execSkippedList"></ul>
+          </div>
+          <div class="report-section">
+            <div class="report-title">Parser Warnings</div>
+            <ul class="report-list" id="execWarningList"></ul>
+          </div>
+        </div>
+
+        <div class="result-content" id="coverageView">
+          <div class="report-section">
+            <div class="report-title">Coverage Summary</div>
+            <div class="coverage-grid" id="coverageSummaryCards"></div>
+            <div class="coverage-scope" id="coverageScopeLine"></div>
+            <div class="coverage-inline-note" id="coverageWarningNote"></div>
+          </div>
+          <div class="report-section">
+            <div class="report-title">Category Coverage</div>
+            <div id="coverageCategoryList"></div>
+          </div>
+          <div class="report-section">
+            <div class="report-title">Uncovered Endpoints</div>
+            <ul class="report-list" id="coverageUncoveredList"></ul>
+          </div>
+          <div class="report-section">
+            <div class="report-title">Endpoint Matrix</div>
+            <div style="max-height: 420px; overflow: auto;">
+              <table class="preview-table">
+                <thead>
+                  <tr>
+                    <th>Method</th>
+                    <th>Path</th>
+                    <th>Tests</th>
+                    <th>Categories</th>
+                    <th>Exec</th>
+                    <th>Passed</th>
+                    <th>Failed</th>
+                    <th>Skipped</th>
+                    <th>Runtime</th>
+                    <th>Score</th>
+                  </tr>
+                </thead>
+                <tbody id="coverageEndpointBody"></tbody>
+              </table>
+            </div>
+          </div>
         </div>
 
         <!-- Downloads -->
@@ -896,7 +1149,18 @@
     }
 
     // ── Generate ──
-    async function generate() {
+    function getRunnerPayload() {
+      return {
+        runnerMode: document.querySelector('input[name="runnerMode"]:checked')?.value || 'base-url',
+        runBaseUrl: document.getElementById('runBaseUrl').value.trim() || 'http://localhost:3000',
+        appModulePath: document.getElementById('appModulePath').value.trim() || undefined,
+        runnerHooksPath: document.getElementById('runnerHooksPath').value.trim() || undefined,
+        allowMutations: document.getElementById('allowMutations').checked,
+        timeoutMs: parseInt(document.getElementById('timeoutMs').value, 10) || 10000,
+      };
+    }
+
+    async function generate(runAfterGenerate = false) {
       const content = swaggerContent || document.getElementById('pasteInput').value.trim();
       const routesPath = document.getElementById('routesPath').value.trim();
       const controllersPath = document.getElementById('controllersPath').value.trim();
@@ -915,10 +1179,15 @@
       const jestBaseUrl = document.getElementById('jestBaseUrl').value.trim() || 'http://localhost:3000';
       const jestBasePath = document.getElementById('jestBasePath').value.trim();
       const jestStrictAssertions = document.getElementById('jestStrictAssertions').checked;
+      const runnerPayload = getRunnerPayload();
 
-      const btn = document.getElementById('generateBtn');
-      btn.disabled = true;
-      btn.innerHTML = '⏳ Generating...';
+      const buttons = [
+        document.getElementById('generateBtn'),
+        document.getElementById('generateRunBtn'),
+      ];
+      buttons.forEach(btn => btn.disabled = true);
+      document.getElementById('generateBtn').innerHTML = runAfterGenerate ? '⏳ Working...' : '⏳ Generating...';
+      document.getElementById('generateRunBtn').innerHTML = '⏳ Working...';
       hideError();
       showView('loading');
 
@@ -953,6 +1222,9 @@
             jestBaseUrl: outputJest ? jestBaseUrl : undefined,
             jestBasePath: outputJest && jestBasePath ? jestBasePath : undefined,
             jestExploratoryAssertions: outputJest && !jestStrictAssertions,
+            strictAssertions: jestStrictAssertions,
+            runAfterGenerate,
+            ...runnerPayload,
           }),
         });
 
@@ -973,14 +1245,31 @@
         showError(err.message);
         showView('placeholder');
       } finally {
-        btn.disabled = false;
-        btn.innerHTML = '<span class="shimmer"></span>⚡ Generate Test Cases';
+        buttons.forEach(btn => btn.disabled = false);
+        document.getElementById('generateBtn').innerHTML = '<span class="shimmer"></span>⚡ Generate';
+        document.getElementById('generateRunBtn').innerHTML = '<span class="shimmer"></span>▶ Generate + Run';
       }
     }
 
     // ── Render Results ──
     function renderResults(data) {
-      const { testCases = [], metadata = {}, markdown = '', savedFiles = [] } = data;
+      const {
+        testCases = [],
+        metadata = {},
+        markdown = '',
+        savedFiles = [],
+        warnings = [],
+        execution = null,
+        coverage = null,
+        coverageBasis = null,
+        message = '',
+      } = data;
+
+      if (message) {
+        showError(message);
+      } else {
+        hideError();
+      }
 
       // Stats bar
       const statsBar = document.getElementById('statsBar');
@@ -991,11 +1280,14 @@
         ${Object.entries(cats).map(([cat, count]) =>
           `<span class="stat-badge ${cat}">${count} ${cap(cat)}</span>`
         ).join('')}
+        ${warnings.length > 0 ? `<span class="stat-badge validation">${warnings.length} Warnings</span>` : ''}
       `;
 
       // Preview table
       const tbody = document.getElementById('previewBody');
-      tbody.innerHTML = testCases.map(tc => `
+      tbody.innerHTML = testCases.length === 0
+        ? '<tr><td colspan="6" class="coverage-empty">No generated test cases for the current scope.</td></tr>'
+        : testCases.map(tc => `
         <tr>
           <td style="font-weight:600; color: var(--text-dim); white-space: nowrap;">${tc.id}</td>
           <td style="white-space:nowrap; font-size:12px;"><strong>${tc.method}</strong> ${tc.endpoint?.replace(tc.method + ' ', '') || ''}</td>
@@ -1007,7 +1299,7 @@
       `).join('');
 
       // JSON view
-      const jsonStr = JSON.stringify({ metadata, testCases }, null, 2);
+      const jsonStr = JSON.stringify({ metadata, testCases, coverageBasis, warnings }, null, 2);
       document.getElementById('jsonCode').textContent = jsonStr;
 
       // Markdown view
@@ -1028,9 +1320,25 @@
           dlBar.innerHTML += `<a class="btn-download" href="/download/${encodeURIComponent(f)}" download>⬇ ${label}</a>`;
         });
       }
+      if (execution && execution.savedFiles) {
+        execution.savedFiles.forEach(f => {
+          const name = f.split('/').pop() || f;
+          dlBar.innerHTML += `<a class="btn-download" href="/download/${encodeURIComponent(f)}" download>⬇ Report: ${name}</a>`;
+        });
+      }
+      if (coverage && coverage.savedFiles) {
+        coverage.savedFiles.forEach(f => {
+          const name = f.split('/').pop() || f;
+          dlBar.innerHTML += `<a class="btn-download" href="/download/${encodeURIComponent(f)}" download>⬇ Coverage: ${name}</a>`;
+        });
+      }
       // Always add copy buttons
       dlBar.innerHTML += `<button class="btn-download" onclick="downloadBlob('json')">💾 Save JSON</button>`;
       dlBar.innerHTML += `<button class="btn-download" onclick="downloadBlob('md')">💾 Save Markdown</button>`;
+
+      renderExecution(execution, warnings);
+      renderCoverage(coverage, message);
+      document.getElementById('runLastBtn').style.display = testCases.length > 0 ? 'block' : 'none';
     }
 
     // ── View Switching ──
@@ -1064,7 +1372,12 @@
       if (!lastResult) return;
       let content, filename, mime;
       if (type === 'json') {
-        content = JSON.stringify({ metadata: lastResult.metadata, testCases: lastResult.testCases }, null, 2);
+        content = JSON.stringify({
+          metadata: lastResult.metadata,
+          testCases: lastResult.testCases,
+          coverageBasis: lastResult.coverageBasis,
+          warnings: lastResult.warnings || [],
+        }, null, 2);
         filename = `qa_test_cases_${Date.now()}.json`;
         mime = 'application/json';
       } else {
@@ -1106,6 +1419,215 @@
 
     // ── Utilities ──
     function cap(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : ''; }
+    function formatMaybeScore(value, suffix = '') {
+      return value == null ? 'Pending' : `${value}${suffix}`;
+    }
+    function coverageStateClass(state) {
+      if (state === 'passing') return 'good';
+      if (state === 'mutation-gated' || state === 'skipped' || state === 'pending') return 'warn';
+      if (state === 'failing') return 'bad';
+      return '';
+    }
+
+    function renderExecution(execution, warnings = []) {
+      const summaryEl = document.getElementById('execSummary');
+      const endpointBody = document.getElementById('execEndpointBody');
+      const failedList = document.getElementById('execFailedList');
+      const skippedList = document.getElementById('execSkippedList');
+      const warningList = document.getElementById('execWarningList');
+
+      if (!execution || !execution.report) {
+        summaryEl.innerHTML = '<div style="color:var(--text-dim);font-size:13px;">No execution run yet.</div>';
+        endpointBody.innerHTML = '';
+        failedList.innerHTML = '<li>No failed tests.</li>';
+        skippedList.innerHTML = '<li>No skipped tests.</li>';
+      } else {
+        const report = execution.report;
+        summaryEl.innerHTML = `
+          <div class="stats-bar" style="display:flex; margin-bottom:0;">
+            <span class="stat-badge total">${report.summary.executed} Executed</span>
+            <span class="stat-badge positive">${report.summary.passed} Passed</span>
+            <span class="stat-badge negative">${report.summary.failed} Failed</span>
+            <span class="stat-badge edge">${report.summary.skipped} Skipped</span>
+            <span class="stat-badge validation">${report.summary.warnings} Warnings</span>
+          </div>
+          <div style="margin-top:10px; font-size:13px; color:var(--text-muted);">
+            Mode: <strong>${report.metadata.mode}</strong> · Duration: <strong>${report.metadata.durationMs}ms</strong>
+          </div>
+        `;
+        endpointBody.innerHTML = (report.endpointSummaries || []).map(summary => `
+          <tr>
+            <td>${summary.method}</td>
+            <td>${summary.endpoint}</td>
+            <td>${summary.total}</td>
+            <td>${summary.passed}</td>
+            <td>${summary.failed}</td>
+            <td>${summary.skipped}</td>
+          </tr>
+        `).join('');
+        const failed = (report.results || []).filter(result => result.status === 'failed');
+        const skipped = (report.results || []).filter(result => result.status === 'skipped');
+        failedList.innerHTML = failed.length === 0
+          ? '<li>No failed tests.</li>'
+          : failed.map(result => `<li><strong>${result.testCaseId}</strong> ${result.method} ${result.endpoint} — ${result.message || 'Failed'}</li>`).join('');
+        skippedList.innerHTML = skipped.length === 0
+          ? '<li>No skipped tests.</li>'
+          : skipped.map(result => `<li><strong>${result.testCaseId}</strong> ${result.method} ${result.endpoint} — ${result.skippedReason || 'Skipped'}</li>`).join('');
+      }
+
+      warningList.innerHTML = warnings.length === 0
+        ? '<li>No parser warnings.</li>'
+        : warnings.map(warning => `<li>[${warning.kind}] ${warning.file}${warning.line ? `:${warning.line}` : ''} — ${warning.message}</li>`).join('');
+    }
+
+    function renderCoverage(coverage, message = '') {
+      const summaryCards = document.getElementById('coverageSummaryCards');
+      const scopeLine = document.getElementById('coverageScopeLine');
+      const warningNote = document.getElementById('coverageWarningNote');
+      const categoryList = document.getElementById('coverageCategoryList');
+      const uncoveredList = document.getElementById('coverageUncoveredList');
+      const endpointBody = document.getElementById('coverageEndpointBody');
+
+      if (!coverage || !coverage.report) {
+        summaryCards.innerHTML = '<div class="coverage-empty">No coverage report yet.</div>';
+        scopeLine.textContent = '';
+        warningNote.style.display = message ? 'block' : 'none';
+        warningNote.textContent = message || '';
+        categoryList.innerHTML = '<div class="coverage-empty">Generate test cases to populate coverage.</div>';
+        uncoveredList.innerHTML = '<li>No uncovered endpoints.</li>';
+        endpointBody.innerHTML = '<tr><td colspan="10" class="coverage-empty">No endpoint coverage data yet.</td></tr>';
+        return;
+      }
+
+      const report = coverage.report;
+      const isPartial =
+        report.metadata.executionState === 'partial' ||
+        report.metadata.scopeMode === 'generated-only';
+
+      summaryCards.innerHTML = `
+        <div class="coverage-card">
+          <div class="coverage-card-label">Overall</div>
+          <div class="coverage-card-value">${report.summary.overallScore}</div>
+          <div class="coverage-card-subtle">${report.metadata.executionState === 'pending' ? 'Execution pending' : 'Weighted score'}</div>
+        </div>
+        <div class="coverage-card">
+          <div class="coverage-card-label">Design</div>
+          <div class="coverage-card-value">${report.summary.designScore}</div>
+          <div class="coverage-card-subtle">${report.summary.totalTests} generated tests</div>
+        </div>
+        <div class="coverage-card">
+          <div class="coverage-card-label">Runtime</div>
+          <div class="coverage-card-value">${formatMaybeScore(report.summary.runtimeScore)}</div>
+          <div class="coverage-card-subtle">${report.metadata.executionState === 'pending' ? 'Run pending' : `${formatMaybeScore(report.summary.passRate, '%')} pass rate`}</div>
+        </div>
+        <div class="coverage-card">
+          <div class="coverage-card-label">Endpoint Coverage</div>
+          <div class="coverage-card-value">${report.summary.endpointCoveragePct}%</div>
+          <div class="coverage-card-subtle">${report.summary.coveredEndpoints}/${report.summary.inScopeTotal} endpoints</div>
+        </div>
+        <div class="coverage-card">
+          <div class="coverage-card-label">Pass Rate</div>
+          <div class="coverage-card-value">${formatMaybeScore(report.summary.passRate, '%')}</div>
+          <div class="coverage-card-subtle">${report.summary.executedTests} executed tests</div>
+        </div>
+        <div class="coverage-card">
+          <div class="coverage-card-label">Mutation-Gated</div>
+          <div class="coverage-card-value">${report.summary.mutationGatedEndpoints}</div>
+          <div class="coverage-card-subtle">Safe mode excluded</div>
+        </div>
+      `;
+
+      scopeLine.textContent = `${report.summary.inScopeTotal} endpoints in scope of ${report.summary.discoveredTotal} discovered.`;
+      warningNote.style.display = (message || isPartial) ? 'block' : 'none';
+      warningNote.textContent = message || (
+        isPartial
+          ? 'Coverage is partial because the source bundle did not include a full filtered API basis.'
+          : ''
+      );
+
+      categoryList.innerHTML = (report.categorySummaries || []).length === 0
+        ? '<div class="coverage-empty">No category coverage data yet.</div>'
+        : report.categorySummaries.map(category => `
+          <div class="coverage-row">
+            <div class="coverage-row-top">
+              <strong>${cap(category.category)}</strong>
+              <span>${category.endpointsCovered}/${category.totalEndpoints} endpoints · ${category.testCount} tests · ${category.coveragePct}%</span>
+            </div>
+            <div class="coverage-progress">
+              <div class="coverage-progress-fill" style="width:${category.coveragePct}%"></div>
+            </div>
+          </div>
+        `).join('');
+
+      uncoveredList.innerHTML = (report.uncoveredEndpoints || []).length === 0
+        ? '<li>No uncovered endpoints.</li>'
+        : report.uncoveredEndpoints.map(endpoint => `<li><strong>${endpoint.method}</strong> ${endpoint.path}</li>`).join('');
+
+      endpointBody.innerHTML = (report.endpointSummaries || []).length === 0
+        ? '<tr><td colspan="10" class="coverage-empty">No endpoint coverage data yet.</td></tr>'
+        : report.endpointSummaries.map(summary => `
+          <tr>
+            <td>${summary.method}</td>
+            <td>${summary.path}</td>
+            <td>${summary.generatedTests}</td>
+            <td>
+              ${summary.categoriesCovered.length > 0
+                ? summary.categoriesCovered.map(category => `<span class="coverage-chip">${category}</span>`).join('')
+                : '<span class="coverage-empty">None</span>'}
+            </td>
+            <td>${summary.executed}</td>
+            <td>${summary.passed}</td>
+            <td>${summary.failed}</td>
+            <td>${summary.skipped}</td>
+            <td><span class="coverage-chip ${coverageStateClass(summary.runtimeState)}">${summary.runtimeState}</span></td>
+            <td>${summary.overallScore}</td>
+          </tr>
+        `).join('');
+    }
+
+    async function runLastResult() {
+      if (!lastResult || !lastResult.testCases || lastResult.testCases.length === 0) {
+        showError('Generate test cases first before running execution.');
+        return;
+      }
+
+      hideError();
+      showView('loading');
+      document.getElementById('loadingMsg').textContent = 'Executing generated test cases...';
+
+      try {
+        const res = await fetch('/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            testCases: lastResult.testCases,
+            coverageBasis: lastResult.coverageBasis,
+            warnings: lastResult.warnings || [],
+            strictAssertions: document.getElementById('jestStrictAssertions').checked,
+            ...getRunnerPayload(),
+            sourceLabel: 'web-run-last-result',
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+
+        lastResult.execution = {
+          report: data.report,
+          savedFiles: data.savedFiles,
+          exitCode: data.exitCode,
+        };
+        lastResult.coverage = data.coverage;
+        renderResults(lastResult);
+        showView('results');
+        document.querySelector('[data-rtab="execView"]').click();
+        try {
+          localStorage.setItem('qa_last_result', JSON.stringify({ ...lastResult, savedAt: new Date().toISOString() }));
+        } catch {}
+      } catch (err) {
+        showError(err.message);
+        showView('results');
+      }
+    }
 
     // ── Load History ──
     async function loadHistory() {

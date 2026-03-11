@@ -10,12 +10,24 @@ import path from 'path';
 import fs from 'fs-extra';
 import os from 'os';
 import * as logger from './utils/logger';
+import {
+  createAndSaveCoverageResult,
+  createGeneratedOnlyCoverageBasis,
+  loadGeneratedBundleFromFile,
+} from './coverage';
 import { generateFromSwaggerString, generateFromRoutes, generateFromMixed } from './generators/testCaseGenerator';
+import { executeTestCases } from './runner';
 import { parseSwaggerString } from './parsers/swaggerParser';
 import { listFiles } from './utils/fileUtils';
 import { formatTestCases as formatJson } from './formatters/jsonFormatter';
 import { formatTestCases as formatMd } from './formatters/markdownFormatter';
-import type { GenerateRequestBody } from './types';
+import type {
+  CoverageBasis,
+  GenerateRequestBody,
+  ParseWarning,
+  RunRequestBody,
+  RunnerConfig,
+} from './types';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -34,6 +46,31 @@ app.use((req, res, next) => {
 const outputDir = path.resolve(process.env.DEFAULT_OUTPUT_DIR ?? './output');
 fs.ensureDirSync(outputDir);
 app.use('/output', express.static(outputDir));
+
+function buildRunnerConfigFromBody(
+  body: GenerateRequestBody | RunRequestBody,
+  fallbackOutputDir: string
+): Partial<RunnerConfig> {
+  return {
+    mode: body.runnerMode === 'app-import' ? 'app-import' : 'base-url',
+    baseUrl: body.runBaseUrl ? String(body.runBaseUrl).trim() : 'http://localhost:3000',
+    appModulePath: body.appModulePath ? path.resolve(String(body.appModulePath).trim()) : undefined,
+    hooksPath: body.runnerHooksPath ? path.resolve(String(body.runnerHooksPath).trim()) : undefined,
+    allowMutations: !!body.allowMutations,
+    reportDir: body.reportDir
+      ? path.resolve(String(body.reportDir).trim())
+      : path.join(fallbackOutputDir, 'reports'),
+    timeoutMs: body.timeoutMs ? parseInt(String(body.timeoutMs), 10) || 10000 : 10000,
+    strictAssertions:
+      'strictAssertions' in body
+        ? !!body.strictAssertions
+        : false,
+  };
+}
+
+function relativeToOutput(filePath: string): string {
+  return path.relative(outputDir, path.resolve(filePath));
+}
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -113,6 +150,7 @@ app.post('/generate', async (req: Request, res: Response) => {
       jestBaseUrl = 'http://localhost:3000',
       jestBasePath,
       jestExploratoryAssertions,
+      runAfterGenerate = false,
     } = body;
 
     if (!swaggerContent && !routesPath) {
@@ -160,9 +198,12 @@ app.post('/generate', async (req: Request, res: Response) => {
       jestBasePath: jestBasePath ? String(jestBasePath).trim() : undefined,
       jestExploratoryAssertions: jestExploratoryAssertions === false ? false : true,
     };
+    const runnerConfig = buildRunnerConfigFromBody(body, outputDir);
 
     let testCases: import('./types').TestCase[];
     let savedFiles: string[];
+    let warnings: ParseWarning[];
+    let coverageBasis: CoverageBasis;
     const resolvedRoutesPath = routesPath
       ? path.resolve(String(routesPath).trim())
       : null;
@@ -184,6 +225,8 @@ app.post('/generate', async (req: Request, res: Response) => {
         });
         testCases = result.testCases;
         savedFiles = result.savedFiles;
+        warnings = result.warnings;
+        coverageBasis = result.coverageBasis;
       } finally {
         await fs.remove(tempPath).catch(() => {});
       }
@@ -196,6 +239,8 @@ app.post('/generate', async (req: Request, res: Response) => {
       );
       testCases = result.testCases;
       savedFiles = result.savedFiles;
+      warnings = result.warnings;
+      coverageBasis = result.coverageBasis;
     } else {
       logger.info(`Web UI: Generating from Swagger (format: ${format})`);
       const result = await generateFromSwaggerString(
@@ -204,21 +249,145 @@ app.post('/generate', async (req: Request, res: Response) => {
       );
       testCases = result.testCases;
       savedFiles = result.savedFiles;
+      warnings = result.warnings;
+      coverageBasis = result.coverageBasis;
     }
 
-    const jsonOutput = formatJson(testCases);
-    const mdOutput = formatMd(testCases);
+    const generationSource =
+      body.type === 'routes'
+        ? `routes:${path.basename(resolvedRoutesPath ?? 'routes')}`
+        : 'web-generate';
+    let coverageResult = await createAndSaveCoverageResult({
+      source: generationSource,
+      reportDir: runnerConfig.reportDir ?? path.join(outputDir, 'reports'),
+      coverageBasis,
+      testCases,
+      warnings,
+    });
+    let coverageSavedFiles = coverageResult.savedFiles.map(relativeToOutput);
 
-    res.json({
+    const jsonOutput = formatJson(testCases, { coverageBasis, warnings });
+    const mdOutput = formatMd(testCases);
+    const responsePayload: Record<string, unknown> = {
       success: true,
       testCases: jsonOutput.testCases,
       metadata: jsonOutput.metadata,
       markdown: mdOutput,
-      savedFiles: savedFiles.map(f => path.relative(outputDir, path.resolve(f))),
-    });
+      savedFiles: savedFiles.map(relativeToOutput),
+      warnings,
+      coverageBasis,
+      coverage: {
+        report: coverageResult.report,
+        savedFiles: coverageSavedFiles,
+      },
+    };
+
+    if (testCases.length === 0) {
+      responsePayload.message =
+        'Generation produced 0 test cases. Check your filters, route/controller paths, or parser warnings.';
+    }
+
+    if (runAfterGenerate && testCases.length > 0) {
+      const executionResult = await executeTestCases({
+        testCases,
+        runnerConfig,
+        outputDir,
+        source: generationSource,
+        warnings,
+      });
+      coverageResult = await createAndSaveCoverageResult({
+        source: generationSource,
+        reportDir: runnerConfig.reportDir ?? path.join(outputDir, 'reports'),
+        coverageBasis,
+        testCases,
+        warnings,
+        executionReport: executionResult.report,
+      });
+      coverageSavedFiles = [
+        ...new Set([...coverageSavedFiles, ...coverageResult.savedFiles.map(relativeToOutput)]),
+      ];
+      responsePayload.execution = {
+        report: executionResult.report,
+        savedFiles: executionResult.savedFiles.map(relativeToOutput),
+        exitCode: executionResult.exitCode,
+      };
+      responsePayload.coverage = {
+        report: coverageResult.report,
+        savedFiles: coverageSavedFiles,
+      };
+    } else if (runAfterGenerate) {
+      responsePayload.execution = null;
+    }
+
+    res.json(responsePayload);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     logger.error(`Generation failed: ${message}`);
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post('/run', async (req: Request, res: Response) => {
+  try {
+    const body = req.body as RunRequestBody;
+    let testCases: import('./types').TestCase[] | null = null;
+    let coverageBasis: CoverageBasis | null = null;
+    let warnings: ParseWarning[] = [];
+
+    if (body.testCases) {
+      testCases = body.testCases;
+      warnings = body.warnings ?? [];
+      coverageBasis =
+        body.coverageBasis ??
+        createGeneratedOnlyCoverageBasis(testCases, warnings, body.sourceLabel ?? 'web-run');
+    } else if (body.inputPath) {
+      const bundle = await loadGeneratedBundleFromFile(
+        path.resolve(String(body.inputPath).trim())
+      );
+      testCases = bundle.testCases;
+      coverageBasis = bundle.coverageBasis;
+      warnings = bundle.warnings;
+    }
+
+    if (!testCases) {
+      return res.status(400).json({
+        error: 'Provide either testCases or inputPath for execution.',
+      });
+    }
+    const runnerConfig = buildRunnerConfigFromBody(
+      body,
+      body.outputDir ? path.resolve(body.outputDir) : outputDir
+    );
+
+    const executionResult = await executeTestCases({
+      testCases,
+      runnerConfig,
+      outputDir: body.outputDir ? path.resolve(body.outputDir) : outputDir,
+      source: body.sourceLabel ?? 'web-run',
+      warnings,
+    });
+    const coverageResult = await createAndSaveCoverageResult({
+      source: body.sourceLabel ?? 'web-run',
+      reportDir: runnerConfig.reportDir ?? path.join(outputDir, 'reports'),
+      coverageBasis: coverageBasis ?? createGeneratedOnlyCoverageBasis(testCases, warnings),
+      testCases,
+      warnings,
+      executionReport: executionResult.report,
+    });
+
+    res.json({
+      success: true,
+      report: executionResult.report,
+      savedFiles: executionResult.savedFiles.map(relativeToOutput),
+      exitCode: executionResult.exitCode,
+      coverage: {
+        report: coverageResult.report,
+        savedFiles: coverageResult.savedFiles.map(relativeToOutput),
+      },
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    logger.error(`Execution failed: ${message}`);
     res.status(500).json({ error: message });
   }
 });
@@ -234,7 +403,7 @@ app.get('/download/:filename(.+)', (req: Request, res: Response) => {
 
 app.get('/history', async (req: Request, res: Response) => {
   try {
-    const files = await listFiles(outputDir);
+    const files = await listFiles(outputDir, true);
     const fileInfos: Array<{
       filename: string;
       size: number;
@@ -247,7 +416,7 @@ app.get('/history', async (req: Request, res: Response) => {
       if (base === '.gitkeep') continue;
       const stat = await fs.stat(f);
       fileInfos.push({
-        filename: base,
+        filename: path.relative(outputDir, f),
         size: stat.size,
         created: stat.birthtime,
         modified: stat.mtime,

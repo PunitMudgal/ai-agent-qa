@@ -90,10 +90,23 @@ export async function validateAndWriteJestFile(
   return true;
 }
 
-export async function listFiles(dir: string): Promise<string[]> {
+export async function listFiles(dir: string, recursive = false): Promise<string[]> {
   try {
     const entries = await fs.readdir(dir, { withFileTypes: true });
-    return entries.filter(e => e.isFile()).map(e => path.join(dir, e.name));
+    const files: string[] = [];
+
+    for (const entry of entries) {
+      const entryPath = path.join(dir, entry.name);
+      if (entry.isFile()) {
+        files.push(entryPath);
+        continue;
+      }
+      if (recursive && entry.isDirectory()) {
+        files.push(...(await listFiles(entryPath, true)));
+      }
+    }
+
+    return files;
   } catch {
     return [];
   }

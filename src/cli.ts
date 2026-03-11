@@ -11,9 +11,24 @@ import path from 'path';
 import fs from 'fs-extra';
 import readline from 'readline';
 import * as logger from './utils/logger';
+import {
+  createAndSaveCoverageResult,
+  loadExecutionReportFromFile,
+  loadGeneratedBundleFromFile,
+} from './coverage';
 import { generateFromSwagger, generateFromRoutes, generateFromMixed } from './generators/testCaseGenerator';
+import { executeTestCases } from './runner';
 import { scanDirectory } from './utils/fileUtils';
-import type { TestCase, GenerationOptions } from './types';
+import type {
+  CoverageBasis,
+  CoverageResult,
+  ExecutionReport,
+  ExecutionResult,
+  GenerationOptions,
+  ParseWarning,
+  RunnerConfig,
+  TestCase,
+} from './types';
 
 const program = new Command();
 
@@ -39,9 +54,46 @@ interface GlobalOpts {
   baseUrl?: string;
   basePath?: string;
   strictAssertions?: boolean;
+  run?: boolean;
+  runMode?: string;
+  runBaseUrl?: string;
+  appModule?: string;
+  runnerHooks?: string;
+  allowMutations?: boolean;
+  reportDir?: string;
+  timeoutMs?: number;
+}
+
+function addRunnerOptions(cmd: Command, includeRunFlag = true): Command {
+  if (includeRunFlag) {
+    cmd.option('--run', 'Execute generated test cases after generation', false);
+  }
+
+  return cmd
+    .option(
+      '--run-mode <mode>',
+      'Execution mode when running tests: base-url or app-import',
+      'base-url'
+    )
+    .option(
+      '--run-base-url <url>',
+      'Base URL for executable runner (default: http://localhost:3000)',
+      'http://localhost:3000'
+    )
+    .option('--app-module <path>', 'Path to the local app/server module for app-import mode')
+    .option('--runner-hooks <path>', 'Optional JS/TS runner hook file')
+    .option('--allow-mutations', 'Execute mutating endpoints (POST/PUT/PATCH/DELETE)', false)
+    .option('--report-dir <path>', 'Directory for execution reports (default: <output>/reports)')
+    .option(
+      '--timeout-ms <number>',
+      'Timeout per executable test in milliseconds',
+      (v: string) => parseInt(v, 10),
+      10000
+    );
 }
 
 function addGlobalOptions(cmd: Command): Command {
+  addRunnerOptions(cmd);
   return cmd
     .option('--format <type>', 'Output format: json, markdown, or both', 'json')
     .option('--output <dir>', 'Output directory', './output')
@@ -59,16 +111,34 @@ function addGlobalOptions(cmd: Command): Command {
     .option('--strict-assertions', 'Use strict body assertions in Jest tests (default: status-only)', false);
 }
 
+function addExecutionCommandOptions(cmd: Command): Command {
+  addRunnerOptions(cmd, false);
+  return cmd
+    .option('--output <dir>', 'Output directory for execution reports', './output')
+    .option('--verbose', 'Show detailed logs', false)
+    .option('--no-color', 'Disable colored output')
+    .option('--quiet', 'Suppress all output except errors', false)
+    .option(
+      '--strict-assertions',
+      'Use strict body assertions during execution (default: status-only)',
+      false
+    );
+}
+
 interface NormalizedOptions extends GenerationOptions {
   verbose: boolean;
 }
 
-function normalizeOptions(opts: GlobalOpts): NormalizedOptions {
+function configureLogger(opts: Pick<GlobalOpts, 'verbose' | 'quiet' | 'color'>): void {
   logger.configure({
     verbose: opts.verbose ?? false,
     quiet: opts.quiet ?? false,
     noColor: opts.color === false,
   });
+}
+
+function normalizeOptions(opts: GlobalOpts): NormalizedOptions {
+  configureLogger(opts);
 
   const outputDir = opts.output ?? './output';
   return {
@@ -84,6 +154,19 @@ function normalizeOptions(opts: GlobalOpts): NormalizedOptions {
     jestBaseUrl: opts.baseUrl ?? 'http://localhost:3000',
     jestBasePath: opts.basePath?.trim() || undefined,
     jestExploratoryAssertions: opts.strictAssertions ? false : true,
+  };
+}
+
+function buildRunnerConfig(opts: GlobalOpts, outputDir: string): Partial<RunnerConfig> {
+  return {
+    mode: (opts.runMode === 'app-import' ? 'app-import' : 'base-url'),
+    baseUrl: opts.runBaseUrl ?? 'http://localhost:3000',
+    appModulePath: opts.appModule?.trim() || undefined,
+    hooksPath: opts.runnerHooks?.trim() || undefined,
+    allowMutations: opts.allowMutations ?? false,
+    reportDir: opts.reportDir?.trim() || path.join(outputDir, 'reports'),
+    timeoutMs: opts.timeoutMs ?? 10000,
+    strictAssertions: opts.strictAssertions ?? false,
   };
 }
 
@@ -130,6 +213,130 @@ function printSummary(
   }
 }
 
+function printExecutionSummary(result: ExecutionResult): void {
+  logger.newline();
+  logger.header('🧪 Execution Summary');
+  logger.table([
+    { label: 'Mode', value: result.report.metadata.mode },
+    { label: 'Source', value: result.report.metadata.source },
+    { label: 'Executed', value: result.report.summary.executed },
+    { label: 'Passed', value: result.report.summary.passed },
+    { label: 'Failed', value: result.report.summary.failed },
+    { label: 'Skipped', value: result.report.summary.skipped },
+    { label: 'Warnings', value: result.report.summary.warnings },
+    { label: 'Duration', value: `${result.report.metadata.durationMs}ms` },
+  ]);
+
+  if (result.savedFiles.length > 0) {
+    logger.header('📄 Execution Reports');
+    for (const file of result.savedFiles) {
+      logger.success(path.resolve(file));
+    }
+  }
+}
+
+function printCoverageSummary(result: CoverageResult): void {
+  logger.newline();
+  logger.header('📈 Coverage Summary');
+  logger.table([
+    { label: 'In Scope', value: result.report.summary.inScopeTotal },
+    { label: 'Covered Endpoints', value: result.report.summary.coveredEndpoints },
+    {
+      label: 'Endpoint Coverage',
+      value: `${result.report.summary.endpointCoveragePct}%`,
+    },
+    { label: 'Design Score', value: result.report.summary.designScore },
+    {
+      label: 'Runtime Score',
+      value:
+        result.report.summary.runtimeScore == null
+          ? 'Pending'
+          : result.report.summary.runtimeScore,
+    },
+    { label: 'Overall Score', value: result.report.summary.overallScore },
+    {
+      label: 'Mutation-Gated',
+      value: result.report.summary.mutationGatedEndpoints,
+    },
+    {
+      label: 'Warnings',
+      value: result.report.summary.warnings,
+    },
+  ]);
+
+  if (result.savedFiles.length > 0) {
+    logger.header('📄 Coverage Reports');
+    for (const file of result.savedFiles) {
+      logger.success(path.resolve(file));
+    }
+  }
+}
+
+async function saveCoverage(
+  source: string,
+  outputDir: string,
+  coverageBasis: CoverageBasis,
+  testCases: TestCase[],
+  warnings: ParseWarning[] = [],
+  executionReport?: ExecutionReport,
+  reportDirOverride?: string
+): Promise<CoverageResult> {
+  return createAndSaveCoverageResult({
+    source,
+    reportDir: reportDirOverride ?? path.join(outputDir, 'reports'),
+    coverageBasis,
+    testCases,
+    warnings,
+    executionReport,
+  });
+}
+
+async function runExecutionIfRequested(
+  opts: GlobalOpts,
+  testCases: TestCase[],
+  outputDir: string,
+  source: string,
+  coverageBasis: CoverageBasis,
+  warnings: ParseWarning[] = []
+): Promise<number> {
+  if (!opts.run) {
+    return 0;
+  }
+
+  if (testCases.length === 0) {
+    logger.warn('Skipping executable run because generation produced 0 test cases.');
+    return 0;
+  }
+
+  logger.startSpinner('Executing generated test cases...');
+  const runnerConfig = buildRunnerConfig(opts, outputDir);
+  const executionResult = await executeTestCases({
+    testCases,
+    runnerConfig,
+    outputDir,
+    source,
+    warnings,
+  });
+  logger.stopSpinner(
+    executionResult.exitCode === 0,
+    executionResult.exitCode === 0
+      ? 'Executable test run completed'
+      : 'Executable test run completed with failures'
+  );
+  printExecutionSummary(executionResult);
+  const coverageResult = await saveCoverage(
+    source,
+    outputDir,
+    coverageBasis,
+    testCases,
+    warnings,
+    executionResult.report,
+    runnerConfig.reportDir
+  );
+  printCoverageSummary(coverageResult);
+  return executionResult.exitCode;
+}
+
 function capitalize(str: string): string {
   return str.charAt(0).toUpperCase() + str.slice(1);
 }
@@ -152,10 +359,34 @@ swaggerCmd.action(async (opts: GlobalOpts & { input: string }) => {
     logger.newline();
 
     logger.startSpinner('Parsing and generating test cases...');
-    const { testCases, savedFiles } = await generateFromSwagger(opts.input, options);
+    const { testCases, savedFiles, warnings, coverageBasis } = await generateFromSwagger(
+      opts.input,
+      options
+    );
     logger.stopSpinner(true, `Generated ${testCases.length} test cases`);
 
     printSummary(testCases, savedFiles, startTime);
+    const coverageResult = await saveCoverage(
+      `swagger:${path.basename(opts.input)}`,
+      options.outputDir,
+      coverageBasis,
+      testCases,
+      warnings,
+      undefined,
+      buildRunnerConfig(opts, options.outputDir).reportDir
+    );
+    printCoverageSummary(coverageResult);
+    const exitCode = await runExecutionIfRequested(
+      opts,
+      testCases,
+      options.outputDir,
+      `swagger:${path.basename(opts.input)}`,
+      coverageBasis,
+      warnings
+    );
+    if (exitCode !== 0) {
+      process.exit(exitCode);
+    }
   } catch (err) {
     logger.stopSpinner(false, 'Generation failed');
     const message = err instanceof Error ? err.message : String(err);
@@ -186,7 +417,7 @@ routesCmd.action(async (opts: GlobalOpts & { routes: string; controllers?: strin
     logger.newline();
 
     logger.startSpinner('Scanning routes and generating...');
-    const { testCases, savedFiles } = await generateFromRoutes(
+    const { testCases, savedFiles, warnings, coverageBasis } = await generateFromRoutes(
       opts.routes,
       opts.controllers ?? null,
       options
@@ -194,6 +425,27 @@ routesCmd.action(async (opts: GlobalOpts & { routes: string; controllers?: strin
     logger.stopSpinner(true, `Generated ${testCases.length} test cases`);
 
     printSummary(testCases, savedFiles, startTime);
+    const coverageResult = await saveCoverage(
+      `routes:${path.basename(opts.routes)}`,
+      options.outputDir,
+      coverageBasis,
+      testCases,
+      warnings,
+      undefined,
+      buildRunnerConfig(opts, options.outputDir).reportDir
+    );
+    printCoverageSummary(coverageResult);
+    const exitCode = await runExecutionIfRequested(
+      opts,
+      testCases,
+      options.outputDir,
+      `routes:${path.basename(opts.routes)}`,
+      coverageBasis,
+      warnings
+    );
+    if (exitCode !== 0) {
+      process.exit(exitCode);
+    }
   } catch (err) {
     logger.stopSpinner(false, 'Generation failed');
     const message = err instanceof Error ? err.message : String(err);
@@ -228,7 +480,7 @@ generateCmd.action(
       logger.newline();
 
       logger.startSpinner('Processing all sources...');
-      const { testCases, savedFiles } = await generateFromMixed({
+      const { testCases, savedFiles, warnings, coverageBasis } = await generateFromMixed({
         ...options,
         swagger: opts.swagger,
         routes: opts.routes,
@@ -237,6 +489,34 @@ generateCmd.action(
       logger.stopSpinner(true, `Generated ${testCases.length} test cases`);
 
       printSummary(testCases, savedFiles, startTime);
+      const sourceLabel =
+        opts.swagger && opts.routes
+          ? `mixed:${path.basename(opts.swagger)}+${path.basename(opts.routes)}`
+          : opts.swagger
+            ? `swagger:${path.basename(opts.swagger)}`
+            : `routes:${path.basename(opts.routes!)}`
+;
+      const coverageResult = await saveCoverage(
+        sourceLabel,
+        options.outputDir,
+        coverageBasis,
+        testCases,
+        warnings,
+        undefined,
+        buildRunnerConfig(opts, options.outputDir).reportDir
+      );
+      printCoverageSummary(coverageResult);
+      const exitCode = await runExecutionIfRequested(
+        opts,
+        testCases,
+        options.outputDir,
+        sourceLabel,
+        coverageBasis,
+        warnings
+      );
+      if (exitCode !== 0) {
+        process.exit(exitCode);
+      }
     } catch (err) {
       logger.stopSpinner(false, 'Generation failed');
       const message = err instanceof Error ? err.message : String(err);
@@ -305,7 +585,7 @@ scanCmd.action(async (opts: GlobalOpts & { project?: string }) => {
     logger.newline();
     logger.startSpinner('Generating test cases...');
 
-    const { testCases, savedFiles } = await generateFromMixed({
+    const { testCases, savedFiles, warnings, coverageBasis } = await generateFromMixed({
       ...options,
       swagger: swaggerFile ?? undefined,
       routes: routeDir ?? undefined,
@@ -314,6 +594,27 @@ scanCmd.action(async (opts: GlobalOpts & { project?: string }) => {
 
     logger.stopSpinner(true, `Generated ${testCases.length} test cases`);
     printSummary(testCases, savedFiles, startTime);
+    const coverageResult = await saveCoverage(
+      `scan:${path.basename(projectDir)}`,
+      options.outputDir,
+      coverageBasis,
+      testCases,
+      warnings,
+      undefined,
+      buildRunnerConfig(opts, options.outputDir).reportDir
+    );
+    printCoverageSummary(coverageResult);
+    const exitCode = await runExecutionIfRequested(
+      opts,
+      testCases,
+      options.outputDir,
+      `scan:${path.basename(projectDir)}`,
+      coverageBasis,
+      warnings
+    );
+    if (exitCode !== 0) {
+      process.exit(exitCode);
+    }
   } catch (err) {
     logger.stopSpinner(false, 'Scan failed');
     const message = err instanceof Error ? err.message : String(err);
@@ -354,7 +655,7 @@ interactiveCmd.action(async () => {
     const startTime = Date.now();
     logger.startSpinner('Generating test cases...');
 
-    const { testCases, savedFiles } = await generateFromMixed({
+    const { testCases, savedFiles, warnings, coverageBasis } = await generateFromMixed({
       format: format as 'json' | 'markdown' | 'both',
       outputDir: output,
       businessContext: context,
@@ -366,8 +667,76 @@ interactiveCmd.action(async () => {
 
     logger.stopSpinner(true, `Generated ${testCases.length} test cases`);
     printSummary(testCases, savedFiles, startTime);
+    const coverageResult = await saveCoverage(
+      'interactive',
+      output,
+      coverageBasis,
+      testCases,
+      warnings
+    );
+    printCoverageSummary(coverageResult);
   } catch (err) {
     logger.stopSpinner(false, 'Generation failed');
+    const message = err instanceof Error ? err.message : String(err);
+    logger.error(message);
+    process.exit(1);
+  }
+});
+
+const runCmd = program
+  .command('run')
+  .description('Execute generated test cases from an existing JSON file')
+  .requiredOption('--input <path>', 'Path to generated test cases JSON file');
+addExecutionCommandOptions(runCmd);
+
+runCmd.action(async (opts: GlobalOpts & { input: string }) => {
+  configureLogger(opts);
+  const outputDir = opts.output ?? './output';
+
+  try {
+    logger.header('🧪 QA Test Case Runner');
+    logger.keyValue('Input', path.resolve(opts.input));
+    logger.keyValue('Mode', opts.runMode === 'app-import' ? 'app-import' : 'base-url');
+    logger.keyValue('Output', path.resolve(outputDir));
+    logger.newline();
+
+    logger.startSpinner('Loading test cases...');
+    const bundle = await loadGeneratedBundleFromFile(path.resolve(opts.input));
+    const testCases = bundle.testCases;
+    logger.stopSpinner(true, `Loaded ${testCases.length} test cases`);
+
+    logger.startSpinner('Executing test cases...');
+    const runnerConfig = buildRunnerConfig(opts, outputDir);
+    const executionResult = await executeTestCases({
+      testCases,
+      runnerConfig,
+      outputDir,
+      source: `file:${path.basename(opts.input)}`,
+      warnings: bundle.warnings,
+    });
+    logger.stopSpinner(
+      executionResult.exitCode === 0,
+      executionResult.exitCode === 0
+        ? 'Executable test run completed'
+        : 'Executable test run completed with failures'
+    );
+    printExecutionSummary(executionResult);
+    const coverageResult = await saveCoverage(
+      `file:${path.basename(opts.input)}`,
+      outputDir,
+      bundle.coverageBasis,
+      testCases,
+      bundle.warnings,
+      executionResult.report,
+      runnerConfig.reportDir
+    );
+    printCoverageSummary(coverageResult);
+
+    if (executionResult.exitCode !== 0) {
+      process.exit(executionResult.exitCode);
+    }
+  } catch (err) {
+    logger.stopSpinner(false, 'Execution failed');
     const message = err instanceof Error ? err.message : String(err);
     logger.error(message);
     process.exit(1);
@@ -434,6 +803,67 @@ validateCmd.action(async (opts: { input: string }) => {
     process.exit(1);
   }
 });
+
+const coverageCmd = program
+  .command('coverage')
+  .description('Build a coverage dashboard report from generated test cases JSON')
+  .requiredOption('--input <path>', 'Path to generated test cases JSON file')
+  .option('--execution-report <path>', 'Optional execution report JSON to overlay runtime coverage')
+  .option('--output <dir>', 'Output directory for coverage reports', './output')
+  .option('--report-dir <path>', 'Directory for coverage reports (default: <output>/reports)')
+  .option('--verbose', 'Show detailed logs', false)
+  .option('--no-color', 'Disable colored output')
+  .option('--quiet', 'Suppress all output except errors', false);
+
+coverageCmd.action(
+  async (opts: {
+    input: string;
+    executionReport?: string;
+    output?: string;
+    reportDir?: string;
+    verbose?: boolean;
+    color?: boolean;
+    quiet?: boolean;
+  }) => {
+    configureLogger(opts);
+    const outputDir = opts.output ?? './output';
+
+    try {
+      logger.header('📈 QA Coverage Dashboard');
+      logger.keyValue('Input', path.resolve(opts.input));
+      if (opts.executionReport) {
+        logger.keyValue('Execution Report', path.resolve(opts.executionReport));
+      }
+      logger.keyValue('Output', path.resolve(outputDir));
+      logger.newline();
+
+      logger.startSpinner('Loading generated bundle...');
+      const bundle = await loadGeneratedBundleFromFile(path.resolve(opts.input));
+      const executionReport = opts.executionReport
+        ? await loadExecutionReportFromFile(path.resolve(opts.executionReport))
+        : undefined;
+      logger.stopSpinner(true, 'Coverage inputs loaded');
+
+      logger.startSpinner('Building coverage dashboard...');
+      const coverageResult = await saveCoverage(
+        `coverage:${path.basename(opts.input)}`,
+        outputDir,
+        bundle.coverageBasis,
+        bundle.testCases,
+        bundle.warnings,
+        executionReport,
+        opts.reportDir?.trim() || path.join(outputDir, 'reports')
+      );
+      logger.stopSpinner(true, 'Coverage dashboard saved');
+      printCoverageSummary(coverageResult);
+    } catch (err) {
+      logger.stopSpinner(false, 'Coverage build failed');
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error(message);
+      process.exit(1);
+    }
+  }
+);
 
 const statsCmd = program
   .command('stats')
