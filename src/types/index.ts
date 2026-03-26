@@ -140,6 +140,10 @@ export interface ControllerHint {
   modelReferences: string[];
   authChecks: string[];
   validationChecks: string[];
+  queryParamNames: string[];
+  bodyFieldNames: string[];
+  pathParamNames: string[];
+  returnPatterns: string[];
   jsdoc: string;
   conditionalBranches: number;
 }
@@ -161,7 +165,7 @@ export interface GenerationOptions {
   includeCategories?: string[];
   /** Generate Jest + Supertest test files */
   outputJest?: boolean;
-  /** Directory for .test.ts files (default: outputDir + '/jest') */
+  /** Directory for .test.js files (default: outputDir + '/jest') */
   jestOutputDir?: string;
   /** Base URL for API under test (default: http://localhost:3000) */
   jestBaseUrl?: string;

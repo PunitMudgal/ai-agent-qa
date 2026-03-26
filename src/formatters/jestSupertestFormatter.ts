@@ -1,6 +1,6 @@
 /**
  * @module jestSupertestFormatter
- * @description Formats test cases as runnable Jest + Supertest .test.ts files (one per endpoint).
+ * @description Formats test cases as runnable Jest + Supertest .test.js files (one per endpoint).
  */
 
 import type { TestCase, InputData, ExpectedOutput } from '../types';

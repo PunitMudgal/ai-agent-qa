@@ -1182,7 +1182,7 @@
           let label = 'Download ';
           if (f.endsWith('.md')) label += 'Markdown';
           else if (f.endsWith('.json')) label += 'JSON';
-          else if (f.endsWith('.test.ts') || f.includes('jest')) label += 'Jest: ' + name;
+          else if (f.endsWith('.test.js') || f.endsWith('.test.ts') || f.includes('jest')) label += 'Jest: ' + name;
           else label += name;
           dlBar.innerHTML += `<a class="btn-download" href="/download/${encodeURIComponent(f)}" download>⬇ ${label}</a>`;
         });

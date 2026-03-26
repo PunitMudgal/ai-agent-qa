@@ -198,6 +198,7 @@ function analyzeControllerFunction(
   filePath: string,
   sourceFile: ts.SourceFile
 ): ControllerHint {
+  const requestAliases = collectRequestAliases(fnNode);
   const hint: ControllerHint = {
     functionName,
     sourceFile: filePath,
@@ -207,6 +208,10 @@ function analyzeControllerFunction(
     modelReferences: [],
     authChecks: [],
     validationChecks: [],
+    queryParamNames: [],
+    bodyFieldNames: [],
+    pathParamNames: [],
+    returnPatterns: [],
     jsdoc: extractJsDoc(fnNode, sourceFile),
     conditionalBranches: 0,
   };
@@ -224,6 +229,26 @@ function analyzeControllerFunction(
       if (/(null|undefined|''|"")/.test(conditionText)) {
         pushUnique(hint.validationChecks, 'null/empty check');
       }
+    }
+
+    const requestFieldAccess = extractRequestFieldAccess(node, requestAliases, sourceFile);
+    if (requestFieldAccess) {
+      if (requestFieldAccess.section === 'query') {
+        pushUnique(hint.queryParamNames, requestFieldAccess.fieldName);
+      }
+      if (requestFieldAccess.section === 'body') {
+        pushUnique(hint.bodyFieldNames, requestFieldAccess.fieldName);
+      }
+      if (requestFieldAccess.section === 'params') {
+        pushUnique(hint.pathParamNames, requestFieldAccess.fieldName);
+      }
+    }
+
+    const destructuredFields = extractDestructuredRequestFields(node, requestAliases, sourceFile);
+    if (destructuredFields) {
+      destructuredFields.query.forEach(name => pushUnique(hint.queryParamNames, name));
+      destructuredFields.body.forEach(name => pushUnique(hint.bodyFieldNames, name));
+      destructuredFields.params.forEach(name => pushUnique(hint.pathParamNames, name));
     }
 
     if (ts.isSwitchStatement(node)) {
@@ -299,9 +324,169 @@ function analyzeControllerFunction(
     ) {
       pushUnique(hint.authChecks, node.expression.text);
     }
+
+    if (
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === 'parseInt'
+    ) {
+      pushUnique(hint.validationChecks, 'numeric coercion via parseInt');
+    }
+
+    if (
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      node.expression.getText(sourceFile) === 'Number.isNaN'
+    ) {
+      pushUnique(hint.validationChecks, 'NaN check');
+    }
+
+    if (ts.isReturnStatement(node) && node.expression) {
+      const returnPattern = describeReturnPattern(node.expression);
+      if (returnPattern) {
+        pushUnique(hint.returnPatterns, returnPattern);
+      }
+    }
   });
 
   return hint;
+}
+
+function collectRequestAliases(fnNode: ts.FunctionLikeDeclarationBase): Set<string> {
+  const aliases = new Set<string>(['req', 'request']);
+  const firstParam = fnNode.parameters[0];
+  if (firstParam && ts.isIdentifier(firstParam.name)) {
+    aliases.add(firstParam.name.text);
+  }
+  return aliases;
+}
+
+type RequestSection = 'query' | 'body' | 'params';
+
+function extractRequestFieldAccess(
+  node: ts.Node,
+  requestAliases: Set<string>,
+  sourceFile: ts.SourceFile
+): { section: RequestSection; fieldName: string } | null {
+  if (ts.isPropertyAccessExpression(node)) {
+    const section = getRequestSectionFromExpression(node.expression, requestAliases, sourceFile);
+    if (section) {
+      return {
+        section,
+        fieldName: node.name.text,
+      };
+    }
+  }
+
+  if (ts.isElementAccessExpression(node)) {
+    const section = getRequestSectionFromExpression(node.expression, requestAliases, sourceFile);
+    const fieldName = literalElementName(node.argumentExpression);
+    if (section && fieldName) {
+      return {
+        section,
+        fieldName,
+      };
+    }
+  }
+
+  return null;
+}
+
+function extractDestructuredRequestFields(
+  node: ts.Node,
+  requestAliases: Set<string>,
+  sourceFile: ts.SourceFile
+): { query: string[]; body: string[]; params: string[] } | null {
+  if (!ts.isVariableDeclaration(node) || !node.initializer || !ts.isObjectBindingPattern(node.name)) {
+    return null;
+  }
+
+  const section = getRequestSectionFromExpression(node.initializer, requestAliases, sourceFile);
+  if (!section) return null;
+
+  const result = {
+    query: [] as string[],
+    body: [] as string[],
+    params: [] as string[],
+  };
+  const target = section === 'query' ? result.query : section === 'body' ? result.body : result.params;
+
+  node.name.elements.forEach(element => {
+    const fieldName = bindingElementName(element);
+    if (fieldName) {
+      target.push(fieldName);
+    }
+  });
+
+  return result;
+}
+
+function getRequestSectionFromExpression(
+  expression: ts.Expression,
+  requestAliases: Set<string>,
+  sourceFile: ts.SourceFile
+): RequestSection | null {
+  if (
+    ts.isPropertyAccessExpression(expression) &&
+    ts.isIdentifier(expression.expression) &&
+    requestAliases.has(expression.expression.text)
+  ) {
+    const section = expression.name.text;
+    if (section === 'query' || section === 'body' || section === 'params') {
+      return section;
+    }
+  }
+
+  if (
+    ts.isElementAccessExpression(expression) &&
+    ts.isIdentifier(expression.expression) &&
+    requestAliases.has(expression.expression.text)
+  ) {
+    const section = literalElementName(expression.argumentExpression);
+    if (section === 'query' || section === 'body' || section === 'params') {
+      return section;
+    }
+  }
+
+  const text = expression.getText(sourceFile).replace(/\s+/g, '');
+  for (const alias of requestAliases) {
+    if (text === `${alias}.query`) return 'query';
+    if (text === `${alias}.body`) return 'body';
+    if (text === `${alias}.params`) return 'params';
+  }
+
+  return null;
+}
+
+function literalElementName(node: ts.Expression | undefined): string | null {
+  if (!node) return null;
+  if (ts.isStringLiteralLike(node) || ts.isNumericLiteral(node)) {
+    return node.text;
+  }
+  return null;
+}
+
+function bindingElementName(element: ts.BindingElement): string | null {
+  if (element.propertyName && ts.isIdentifier(element.propertyName)) {
+    return element.propertyName.text;
+  }
+  if (ts.isIdentifier(element.name)) {
+    return element.name.text;
+  }
+  return null;
+}
+
+function describeReturnPattern(expression: ts.Expression): string | null {
+  if (ts.isArrayLiteralExpression(expression) && expression.elements.length === 0) {
+    return 'returns empty array';
+  }
+  if (ts.isObjectLiteralExpression(expression) && expression.properties.length === 0) {
+    return 'returns empty object';
+  }
+  if (ts.isAwaitExpression(expression) && ts.isCallExpression(expression.expression)) {
+    return 'returns awaited call result';
+  }
+  return null;
 }
 
 function extractJsDoc(node: ts.Node, sourceFile: ts.SourceFile): string {

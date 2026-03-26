@@ -124,7 +124,7 @@ npx ai-agent-qa swagger --input ./swagger.json --output ./output --jest --strict
 
 | Option | Description | Default |
 |--------|-------------|--------|
-| `--jest` | Also generate Jest + Supertest `.test.ts` files | off |
+| `--jest` | Also generate Jest + Supertest `.test.js` files | off |
 | `--jest-dir <path>` | Directory for Jest files | `<output>/jest` |
 | `--base-url <url>` | API base URL in tests | `http://localhost:3000` |
 | `--base-path <path>` | Route prefix (e.g. `/api/v1`) | — |

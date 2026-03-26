@@ -26,15 +26,20 @@ Each test case has these fields:
 
 Cover these categories:
 - positive: happy path with valid data
-- negative: missing required fields, invalid types, unauthorized, not found
+- negative: missing required fields, invalid types, unauthorized (only when auth exists), not found
 - edge: empty strings, null values, special characters, SQL injection, XSS
-- validation: format violations, min/max violations
-- boundary: at limits, beyond limits
+- validation: format violations, min/max violations only when the spec/controller defines a concrete rule
+- boundary: at limits, beyond limits only when the spec/controller defines a concrete rule
 
 CRITICAL RULES:
 - Use EXACT field names from the API spec/controller (e.g. if signIn expects "email", use "email", not "username")
+- Never invent generic parameter names like "param", "param1", "field", or "value"
+- If parameter names are unknown, omit the request params/body instead of fabricating keys
 - Do NOT invent error response shapes. Only assert error shapes that are explicitly documented in the spec
-- Use simple, safe values for path/query/body (avoid code-like strings, unescaped quotes, or very long strings)
+- Do NOT nest metadata like expectedOutput/preconditions/notes/status inside inputData.queryParams or inputData.body
+- Use simple, safe values for path/query/body (avoid code-like strings, unescaped quotes, or placeholder snippets like ".repeat(...)")
+- Only generate unauthorized/403 tests when authentication/security is explicitly present
+- Only generate boundary or max/min length tests when the spec/controller provides an explicit limit, format, pattern, enum, or range
 - For unauthorized/403: expect statusCode only unless the spec defines an exact error body`;
 
 export interface BuildPromptResult {
@@ -138,6 +143,18 @@ export function buildPrompt(
     if (controllerHints.validationChecks && controllerHints.validationChecks.length > 0) {
       parts.push(`- Validation: ${controllerHints.validationChecks.join(', ')}`);
     }
+    if (controllerHints.queryParamNames && controllerHints.queryParamNames.length > 0) {
+      parts.push(`- Observed query params: ${controllerHints.queryParamNames.join(', ')}`);
+    }
+    if (controllerHints.bodyFieldNames && controllerHints.bodyFieldNames.length > 0) {
+      parts.push(`- Observed body fields: ${controllerHints.bodyFieldNames.join(', ')}`);
+    }
+    if (controllerHints.pathParamNames && controllerHints.pathParamNames.length > 0) {
+      parts.push(`- Observed path params: ${controllerHints.pathParamNames.join(', ')}`);
+    }
+    if (controllerHints.returnPatterns && controllerHints.returnPatterns.length > 0) {
+      parts.push(`- Observed direct returns: ${controllerHints.returnPatterns.join(', ')}`);
+    }
     if (controllerHints.conditionalBranches > 0) {
       parts.push(
         `- Conditional branches: ${controllerHints.conditionalBranches} (indicating complex logic)`
@@ -155,6 +172,9 @@ export function buildPrompt(
 
   parts.push(
     `\nGenerate at least ${minTestsPerEndpoint} test cases for this endpoint. Cover positive, negative, edge, validation, and boundary categories.`
+  );
+  parts.push(
+    `If auth, boundary, or validation-limit behavior is not evidenced by the endpoint spec/controller, skip those cases instead of inventing them.`
   );
   parts.push(
     `\nIMPORTANT: Return ONLY valid JSON. The response must be a JSON object: {"testCases": [...]}`

@@ -29,9 +29,9 @@ export function generateOutputFilename(endpoint: string, format: string): string
   return `${date}_${slug}_testcases.${ext}`;
 }
 
-/** Filename for a Jest test file for one endpoint (e.g. "post-subscription-reminder.test.ts") */
+/** Filename for a Jest test file for one endpoint (e.g. "post-subscription-reminder.test.js") */
 export function generateJestTestFilename(endpoint: string): string {
-  return `${endpointToSlug(endpoint)}.test.ts`;
+  return `${endpointToSlug(endpoint)}.test.js`;
 }
 
 export function generateBatchFilename(format: string): string {

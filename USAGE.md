@@ -164,7 +164,7 @@ Output is written to `./output` (or the directory you set via **Output directory
 
 ## Generating Jest + Supertest test code
 
-You can generate **runnable Jest + Supertest** test files from the same test cases. Each endpoint gets one `.test.ts` file (e.g. `post-subscription-reminder.test.ts`) with one `describe` and multiple `it` blocks. Tests call your API via a configurable base URL and assert status codes and response body.
+You can generate **runnable Jest + Supertest** test files from the same test cases. Each endpoint gets one `.test.js` file (e.g. `post-subscription-reminder.test.js`) with one `describe` and multiple `it` blocks. Tests call your API via a configurable base URL and assert status codes and response body.
 
 ### CLI
 
@@ -179,7 +179,7 @@ node dist/cli.js routes --routes /path/to/routes --output ./output --jest --base
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--jest` | Also generate Jest + Supertest `.test.ts` files | off |
+| `--jest` | Also generate Jest + Supertest `.test.js` files | off |
 | `--jest-dir <path>` | Directory for test files | `<output>/jest` |
 | `--base-url <url>` | Base URL for the API under test | `http://localhost:3000` |
 | `--base-path <path>` | Base path for routes (e.g. /api/v1 when app mounts under that) | (none) |
@@ -194,7 +194,7 @@ Generated tests use `process.env.API_BASE_URL || 'http://localhost:3000'`, so yo
 3. Optionally set **Base URL for API** (e.g. `http://localhost:3000`).
 4. If your app mounts routes under a prefix (e.g. `/api/v1`), set **Base path for routes**.
 5. By default, tests assert status codes only (exploratory mode) to avoid false failures from invented error shapes. Check **Strict body assertions** if you want full body matching.
-6. Generate as usual. In the results, use the **Download Jest: &lt;filename&gt;** links to save each `.test.ts` file.
+6. Generate as usual. In the results, use the **Download Jest: &lt;filename&gt;** links to save each `.test.js` file.
 
 ### Running the generated tests
 
@@ -204,9 +204,9 @@ The generator does **not** install or run Jest. In the project where you will ru
    ```bash
    npm install --save-dev jest supertest @types/supertest @types/jest
    ```
-2. Copy the generated `.test.ts` files (e.g. from `./output/jest/`) into your test folder.
+2. Copy the generated `.test.js` files (e.g. from `./output/jest/`) into your test folder.
 3. Start your API (e.g. on port 3000), then run:
    ```bash
-   npx jest path/to/generated.test.ts
+   npx jest path/to/generated.test.js
    ```
    Or set `API_BASE_URL` to point at your running API and run your full test suite.

@@ -13,6 +13,7 @@ import { generateTestCases, initAIProvider } from '../ai/groqClient';
 import { formatTestCases as formatJson, saveToFile as saveJson } from '../formatters/jsonFormatter';
 import { formatTestCases as formatMd, saveToFile as saveMd } from '../formatters/markdownFormatter';
 import { formatTestCasesAsJestByEndpoint } from '../formatters/jestSupertestFormatter';
+import { enrichEndpointWithControllerHint, sanitizeGeneratedTestCases } from './testCaseSanitizer';
 import { ensureOutputDir, generateBatchFilename, validateAndWriteJestFile } from '../utils/fileUtils';
 import * as logger from '../utils/logger';
 
@@ -112,18 +113,12 @@ function tagMatchesFilter(endpointTag: string, filterTag: string): boolean {
   return false;
 }
 
-function assignIds(testCases: unknown[], startId = 1): TestCase[] {
-  return testCases.map((tc, i) => {
-    const record = (typeof tc === 'object' && tc !== null ? tc : {}) as Record<
-      string,
-      unknown
-    >;
-    return {
-      ...record,
-      id: `TC-${String(startId + i).padStart(3, '0')}`,
-      status: (record.status as string) ?? 'Pending',
-    } as TestCase;
-  });
+function assignIdsToNormalizedCases(testCases: TestCase[], startId = 1): TestCase[] {
+  return testCases.map((tc, i) => ({
+    ...tc,
+    id: `TC-${String(startId + i).padStart(3, '0')}`,
+    status: tc.status ?? 'Pending',
+  }));
 }
 
 async function saveOutput(
@@ -250,11 +245,12 @@ export async function generateFromSwagger(
         null,
         opts.minTestsPerEndpoint ?? DEFAULT_OPTIONS.minTestsPerEndpoint
       );
-      const testCases = await generateTestCases(userPrompt, {
+      const rawTestCases = await generateTestCases(userPrompt, {
         systemPrompt,
       });
 
-      const withIds = assignIds(testCases, idCounter);
+      const normalizedCases = sanitizeGeneratedTestCases(rawTestCases, ep, null);
+      const withIds = assignIdsToNormalizedCases(normalizedCases, idCounter);
       idCounter += withIds.length;
       allTestCases.push(...withIds);
       logger.debug(`Generated ${withIds.length} test cases for ${label}`);
@@ -318,9 +314,10 @@ export async function generateFromSwaggerString(
         null,
         opts.minTestsPerEndpoint ?? DEFAULT_OPTIONS.minTestsPerEndpoint
       );
-      const testCases = await generateTestCases(userPrompt, { systemPrompt });
+      const rawTestCases = await generateTestCases(userPrompt, { systemPrompt });
 
-      const withIds = assignIds(testCases, idCounter);
+      const normalizedCases = sanitizeGeneratedTestCases(rawTestCases, ep, null);
+      const withIds = assignIdsToNormalizedCases(normalizedCases, idCounter);
       idCounter += withIds.length;
       allTestCases.push(...withIds);
     } catch (err) {
@@ -441,17 +438,23 @@ export async function generateFromRoutes(
         h.functionName.toLowerCase() ===
         (ep.operationId ?? '').toLowerCase()
     );
+    const enrichedEndpoint = enrichEndpointWithControllerHint(ep, hint ?? null);
 
     try {
       const { systemPrompt, userPrompt } = buildPrompt(
-        ep,
+        enrichedEndpoint,
         opts.businessContext,
         hint ?? null,
         opts.minTestsPerEndpoint ?? DEFAULT_OPTIONS.minTestsPerEndpoint
       );
-      const testCases = await generateTestCases(userPrompt, { systemPrompt });
+      const rawTestCases = await generateTestCases(userPrompt, { systemPrompt });
 
-      const withIds = assignIds(testCases, idCounter);
+      const normalizedCases = sanitizeGeneratedTestCases(
+        rawTestCases,
+        enrichedEndpoint,
+        hint ?? null
+      );
+      const withIds = assignIdsToNormalizedCases(normalizedCases, idCounter);
       idCounter += withIds.length;
       allTestCases.push(...withIds);
     } catch (err) {
@@ -571,17 +574,23 @@ export async function generateFromMixed(
         h.functionName.toLowerCase() === ep.operationId!.toLowerCase()
       );
     });
+    const enrichedEndpoint = enrichEndpointWithControllerHint(ep, hint ?? null);
 
     try {
       const { systemPrompt, userPrompt } = buildPrompt(
-        ep,
+        enrichedEndpoint,
         opts.businessContext,
         hint ?? null,
         opts.minTestsPerEndpoint ?? DEFAULT_OPTIONS.minTestsPerEndpoint
       );
-      const testCases = await generateTestCases(userPrompt, { systemPrompt });
+      const rawTestCases = await generateTestCases(userPrompt, { systemPrompt });
 
-      const withIds = assignIds(testCases, idCounter);
+      const normalizedCases = sanitizeGeneratedTestCases(
+        rawTestCases,
+        enrichedEndpoint,
+        hint ?? null
+      );
+      const withIds = assignIdsToNormalizedCases(normalizedCases, idCounter);
       idCounter += withIds.length;
       allTestCases.push(...withIds);
     } catch (err) {

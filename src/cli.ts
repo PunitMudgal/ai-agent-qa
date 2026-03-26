@@ -199,8 +199,8 @@ function printSummary(
 
   if (savedFiles.length > 0) {
     logger.header('📁 Output Files');
-    const jestFiles = savedFiles.filter(f => f.endsWith('.test.ts'));
-    const otherFiles = savedFiles.filter(f => !f.endsWith('.test.ts'));
+    const jestFiles = savedFiles.filter(f => f.endsWith('.test.js') || f.endsWith('.test.ts'));
+    const otherFiles = savedFiles.filter(f => !f.endsWith('.test.js') && !f.endsWith('.test.ts'));
     for (const f of otherFiles) {
       logger.success(path.resolve(f));
     }
